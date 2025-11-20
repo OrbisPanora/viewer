@@ -1,0 +1,136 @@
+<div class="api-container">
+  <header class="api-header">
+    <h1>API Documentation</h1>
+    <p>REST API endpoints for OrbisPanora</p>
+  </header>
+
+  <div class="api-content">
+    <div class="endpoint-group">
+      <h2>Files</h2>
+      
+      <div class="endpoint">
+        <div class="method-badge post">POST</div>
+        <code>/api/files/upload</code>
+        <p>Upload an MCA or ZIP file for processing</p>
+        
+        <div class="details">
+          <h4>Request Body</h4>
+          <pre>&#123;
+  "file": "binary data",
+  "format": "mca" | "zip"
+&#125;</pre>
+
+          <h4>Response</h4>
+          <pre>&#123;
+  "id": "uuid",
+  "status": "processing",
+  "createdAt": "timestamp"
+&#125;</pre>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method-badge get">GET</div>
+        <code>/api/files/:id</code>
+        <p>Get file processing status and metadata</p>
+        
+        <div class="details">
+          <h4>Response</h4>
+          <pre>&#123;
+  "id": "uuid",
+  "status": "completed",
+  "metadata": &#123;
+    "chunks": 1024,
+    "size": "32MB"
+  &#125;
+&#125;</pre>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method-badge delete">DELETE</div>
+        <code>/api/files/:id</code>
+        <p>Delete a processed file</p>
+        
+        <div class="details">
+          <h4>Response</h4>
+          <pre>&#123;
+  "success": true,
+  "message": "File deleted successfully"
+&#125;</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="endpoint-group">
+      <h2>Chunks</h2>
+      
+      <div class="endpoint">
+        <div class="method-badge get">GET</div>
+        <code>/api/chunks/:fileId/:x/:z</code>
+        <p>Get specific chunk data from a file</p>
+        
+        <div class="details">
+          <h4>Parameters</h4>
+          <ul>
+            <li><code>fileId</code> - File UUID</li>
+            <li><code>x</code> - Chunk X coordinate (0-31)</li>
+            <li><code>z</code> - Chunk Z coordinate (0-31)</li>
+          </ul>
+
+          <h4>Response</h4>
+          <pre>&#123;
+  "x": 0,
+  "z": 0,
+  "blocks": [...],
+  "heightMap": [...]
+&#125;</pre>
+        </div>
+      </div>
+
+      <div class="endpoint">
+        <div class="method-badge get">GET</div>
+        <code>/api/chunks/:fileId/all</code>
+        <p>Get all chunks metadata from a file</p>
+        
+        <div class="details">
+          <h4>Response</h4>
+          <pre>&#123;
+  "total": 1024,
+  "chunks": [
+    &#123; "x": 0, "z": 0, "size": "4KB" &#125;,
+    ...
+  ]
+&#125;</pre>
+        </div>
+      </div>
+    </div>
+
+    <div class="endpoint-group">
+      <h2>Render</h2>
+      
+      <div class="endpoint">
+        <div class="method-badge post">POST</div>
+        <code>/api/render/:fileId</code>
+        <p>Generate a rendered image of the world</p>
+        
+        <div class="details">
+          <h4>Request Body</h4>
+          <pre>&#123;
+  "width": 1920,
+  "height": 1080,
+  "quality": "high",
+  "perspective": "isometric"
+&#125;</pre>
+
+          <h4>Response</h4>
+          <pre>&#123;
+  "imageUrl": "url",
+  "format": "png",
+  "size": "2.5MB"
+&#125;</pre>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
