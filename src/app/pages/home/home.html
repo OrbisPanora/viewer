@@ -1,0 +1,32 @@
+<div class="home-container">
+  <div class="content">
+    <h1>OrbisPanora</h1>
+    <p class="subtitle">Upload your Minecraft Anvil (.mca) or archive (.zip) file to visualize</p>
+    
+    <div 
+      class="drop-zone"
+      [class.drag-over]="isDragOver"
+      (dragover)="onDragOver($event)"
+      (dragleave)="onDragLeave($event)"
+      (drop)="onDrop($event)">
+      
+      <div class="drop-zone-content">
+        <svg class="upload-icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
+          <path d="M21 15v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2v-4"></path>
+          <polyline points="17 8 12 3 7 8"></polyline>
+          <line x1="12" y1="3" x2="12" y2="15"></line>
+        </svg>
+        
+        <h2>Drop your file here</h2>
+        <p>or click to browse</p>
+        <p class="file-types">Supported: .mca, .zip</p>
+        
+        <input 
+          type="file" 
+          accept=".mca,.zip" 
+          (change)="onFileSelected($event)"
+          class="file-input">
+      </div>
+    </div>
+  </div>
+</div>
