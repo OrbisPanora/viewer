@@ -1,4 +1,5 @@
-import { Component, signal } from '@angular/core';
+import * as THREE from 'three';
+import { Component, inject, signal, AfterViewInit, PLATFORM_ID } from '@angular/core';
 import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
 
 @Component({
@@ -8,5 +9,6 @@ import { RouterOutlet, RouterLink, RouterLinkActive } from '@angular/router';
   styleUrl: './app.less'
 })
 export class App {
-  protected readonly title = signal('web');
+  protected readonly title = signal('web'); 
+
 }
