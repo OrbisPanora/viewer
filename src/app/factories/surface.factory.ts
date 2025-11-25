@@ -1,12 +1,11 @@
-import { Block } from '@angular/compiler';
 import * as THREE from 'three';
 import { GeneralBlock } from '../models/general.block';
 
 export abstract class SurfaceFactory {
     public textureLoader!: THREE.TextureLoader;
 
-    constructor() {
-        this.textureLoader = new THREE.TextureLoader();
+    constructor(textureLoader : THREE.TextureLoader) {
+        this.textureLoader = textureLoader;
     }
 
     abstract create(): Promise<any>;
@@ -25,7 +24,7 @@ export abstract class SurfaceFactory {
     }
 
     public createBlockMaterial(texture: THREE.Texture): THREE.MeshBasicMaterial {
-        return new THREE.MeshBasicMaterial({ map: texture });
+        return new THREE.MeshBasicMaterial({ map: texture, transparent: true });
     }
 
     public createBlockMesh(geometry: THREE.PlaneGeometry, material: THREE.MeshBasicMaterial): THREE.Mesh {
