@@ -15,14 +15,8 @@ import JSONK from '../../../../public/test.json';
   styleUrl: './visualizer.less',
   providers: [DataService]
 })
-export class VisualizerPage implements AfterViewInit {
-  constructor(private router: Router) {}
+export class VisualizerPage  { //implements AfterViewInit
 
-  goBack(): void {
-    this.router.navigate(['/']);
-  }
-
-  public dataService: any = inject(DataService);
   private platformId = inject(PLATFORM_ID);
   public scene!: THREE.Scene;
   public camera!: THREE.PerspectiveCamera; //THREE.OrthographicCamera; //THREE.PerspectiveCamera;
@@ -30,17 +24,26 @@ export class VisualizerPage implements AfterViewInit {
   public surfaceFactory!: SurfaceFactory;
   public textureLoader!: THREE.TextureLoader;
 
+  constructor(private router: Router, private dataService: DataService) {}
+
+  goBack(): void {
+    this.router.navigate(['/']);
+  }
+
+
   private animate() {
     requestAnimationFrame(() => this.animate());
 
     this.renderer.render(this.scene, this.camera);
   }
 
-  async ngOnInit() {
-    // Empty - initialization moved to ngAfterViewInit for SSR compatibility
+  private sumYMoyenne(yValues: number[]): number {
+    const total = yValues.reduce((acc, val) => acc + val, 0);
+    return total / yValues.length;
   }
 
-  async ngAfterViewInit() {
+
+  async ngOnInit() { //ngAfterViewInit
     if (!isPlatformBrowser(this.platformId)) {
       return; // Skip on server-side rendering
     }
@@ -55,17 +58,19 @@ export class VisualizerPage implements AfterViewInit {
 
     let xchunk = Math.abs(JSONK["data"]["chunk_x"]*16);
     let zchunk = Math.abs(JSONK["data"]["chunk_z"]*16);
-    console.log("xchunk :", xchunk, " zchunk :", zchunk);
+    let ychunk = Math.round(this.sumYMoyenne(JSONK["data"]["heightmap"][0])); 
+    console.log("xchunk :", xchunk, " zchunk :", zchunk, " ychunk :", ychunk);
     let i, j, x, y, order = 0;
     for (let block of JSONK["data"]["surface_blocks"]){
       //console.log("order :", order);
       // ajouter un y + ajouter un decalage smart
       if (block["y"]==78 || block["y"]==77){ //&& (order<5555 || (order>45&&order<50))){ // break; 78
-        //console.log("order :", order);
+          //console.log("order :", order);
         let i = Math.abs(Math.abs(block["x"]) - xchunk);
         let j = Math.abs(Math.abs(block["z"]) - zchunk);
+        let z = Math.abs(Math.abs(block["y"]) - ychunk);
         x = 0.16*(i-j);
-        y = -0.08*(i+j)+0.08*16;
+        y = -0.08*(i+j)+0.08*16 + 0.16*z;
         x = Math.round(x * 100) / 100;
         y = Math.round(y * 100) / 100;
         console.log(" => i:", i, " j:", j, " => x:", x, " y:", y);
@@ -76,10 +81,10 @@ export class VisualizerPage implements AfterViewInit {
         this.surfaceFactory = new BlockTwoFactory('iso_blocks/bedrock_top.webp', 'iso_blocks/bedrock_left.webp', this.textureLoader);
         let blockModel = await this.surfaceFactory.create_three_face("left", x, y); // zchunk-block["z"] + ycoef?-block["y"]
         console.log(blockModel);
-        blockModel.ordrer(order);
+        //blockModel.ordrer(order);
         blockModel.save(this.scene);
       }
-      order=order+1;
+      //order=order+1;
     }
 
     // this.surfaceFactory = new BlockTwoFactory('iso_blocks/azalea_plant_top.webp', 'iso_blocks/azalea_plant_left.webp', this.textureLoader);
