@@ -7,6 +7,7 @@ import { BlockTwoFactory } from '../../factories/block-two.factory';
 import { isPlatformBrowser } from '@angular/common';
 
 import JSONK from '../../../../public/test.json';
+import { firstValueFrom } from 'rxjs';
 
 @Component({
   selector: 'app-visualizer',
@@ -58,13 +59,14 @@ export class VisualizerPage  { //implements AfterViewInit
 
     let xchunk = Math.abs(JSONK["data"]["chunk_x"]*16);
     let zchunk = Math.abs(JSONK["data"]["chunk_z"]*16);
-    let ychunk = Math.round(this.sumYMoyenne(JSONK["data"]["heightmap"][0])); 
+    let ychunk = 75;//Math.min(...JSONK["data"]["heightmap"][0]); // min marche mieux pourqoui ?? 
     console.log("xchunk :", xchunk, " zchunk :", zchunk, " ychunk :", ychunk);
     let i, j, x, y, order = 0;
+    let blockModel;
     for (let block of JSONK["data"]["surface_blocks"]){
       //console.log("order :", order);
       // ajouter un y + ajouter un decalage smart
-      if (block["y"]==78 || block["y"]==77){ //&& (order<5555 || (order>45&&order<50))){ // break; 78
+      //if (block["y"]>74 && block["y"]<90){ //&& (order<5555 || (order>45&&order<50))){ // break; 78
           //console.log("order :", order);
         let i = Math.abs(Math.abs(block["x"]) - xchunk);
         let j = Math.abs(Math.abs(block["z"]) - zchunk);
@@ -78,25 +80,72 @@ export class VisualizerPage  { //implements AfterViewInit
         pointMesh.position.set(x, y, 0);96 48-49
         this.scene.add(pointMesh);*/
 
-        this.surfaceFactory = new BlockTwoFactory('iso_blocks/bedrock_top.webp', 'iso_blocks/bedrock_left.webp', this.textureLoader);
-        let blockModel = await this.surfaceFactory.create_three_face("left", x, y); // zchunk-block["z"] + ycoef?-block["y"]
-        console.log(blockModel);
+        
+        let images = await this.recupeJSON(block["block"].split(":")[1], block["biome"].split(":")[1]);
+        //break;
+        //console.log("images :", images);
+        this.surfaceFactory = new BlockTwoFactory('iso_blocks/' + images[0] + '.webp', 'iso_blocks/' + images[1] + '.webp', this.textureLoader);
+        if (images[0] == "") {
+          blockModel = await this.surfaceFactory.create_only_right("left", x, y, 0x555555);
+        }
+        else if (images[1] == "") {
+          //blockModel = await this.surfaceFactory.create_only_top("left", x, y, 0xffffff);
+        } else {
+          blockModel = await this.surfaceFactory.create_three_face("left", x, y, 0xffffff); // zchunk-block["z"] + ycoef?-block["y"]
+        }
+        if ("grass_block_side_overlay_left_left" == images[1]) {
+          console.log("OVERLAY DETECTED");
+          break;
+        }
+        
+        //console.log(blockModel);
         //blockModel.ordrer(order);
         blockModel.save(this.scene);
-      }
+      //}
       //order=order+1;
     }
 
-    // this.surfaceFactory = new BlockTwoFactory('iso_blocks/azalea_plant_top.webp', 'iso_blocks/azalea_plant_left.webp', this.textureLoader);
-
-    // let blockModel = await this.surfaceFactory.create_three_face("left", 0, 0);
-    // let blockModel2 = await this.surfaceFactory.create_only_top("bottom", 1, 0);
-    // let blockModel3 = await this.surfaceFactory.create_only_right("bottom", 0, 1);
-    // blockModel.save(this.scene);
-    // blockModel2.save(this.scene);
-    // blockModel3.save(this.scene);
-
     this.cameraXAnime();
+  }
+
+  private async recupeJSON(block_name: string, biome_name: string): Promise<string[]> {
+    let image_top = "";
+    let image_left = "";
+    let data = await firstValueFrom(this.dataService.getBlockJSON(block_name));
+    //let example = this.dataService.getBlockJSON(block_name).pipe(map(data => {
+    let keys = Object.keys(data['textures'])
+    //console.log("keys :", keys, " nom du block :", block_name);
+    if (keys.length == 1) {
+      let image = data['textures'][keys[0]].split("/")[1];
+      if (keys[0] == "all") {
+        // block
+        image_top = image+"_top";
+        image_left = image+"_left";
+        console.log(" TEST 1 ");
+      }
+      else {
+        // côté unique (ou double ?) a refaire apres
+        image_left = image+"_left";
+        console.log(" TEST 3 ");
+        //console.log("image_left seul :", image_left);
+      }
+    } else {
+      if (keys.includes("top") && keys.includes("side")) {
+        // top + side
+        image_top = data['textures']["top"].split("/")[1]+"_top";
+        image_left = data['textures']["side"].split("/")[1]+"_left";
+        //console.log(" TEST 3 ");
+        
+      } else if (keys.includes("end") && keys.includes("side")) {
+        image_top = data['textures']["end"].split("/")[1]+"_top";
+        image_left = data['textures']["side"].split("/")[1]+"_left";
+      } else {
+        console.log(" TODO");
+      }
+    }
+    //}));
+    //console.log("image_top :", image_top, " image_left :", image_left);
+    return [image_top, image_left];
   }
 
   private initScene() {
@@ -111,7 +160,7 @@ export class VisualizerPage  { //implements AfterViewInit
   }
 
   private cameraXAnime() {
-    this.camera.position.z = 2;
+    this.camera.position.z = 2.5;
     this.camera.position.y = 0;
     this.camera.position.x = 0;
 

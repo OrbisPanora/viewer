@@ -8,12 +8,11 @@ export abstract class SurfaceFactory {
         this.textureLoader = textureLoader;
     }
 
-    abstract create_three_face(orientation : "left" | "right" | "top" | "bottom", x : number, y : number): Promise<any>;
+    abstract create_three_face(orientation : "left" | "right" | "top" | "bottom", x : number, y : number, color?: number): Promise<any>;
 
-    abstract create_only_top(orientation : "left" | "right" | "top" | "bottom", x : number, y : number): Promise<any>;
+    abstract create_only_top(orientation : "left" | "right" | "top" | "bottom", x : number, y : number, color?: number): Promise<any>;
 
-    abstract create_only_right(orientation : "left" | "right" | "top" | "bottom", x : number, y : number): Promise<any>;
-
+    abstract create_only_right(orientation : "left" | "right" | "top" | "bottom", x : number, y : number, color?: number): Promise<any>;
     public createBlockGeometry(size1 : number = 0.32, size2 : number = 0.16): THREE.PlaneGeometry {
         return new THREE.PlaneGeometry(size1, size2);
     }

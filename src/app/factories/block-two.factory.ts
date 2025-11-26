@@ -11,7 +11,7 @@ export class BlockTwoFactory extends SurfaceFactory {
         this.path_side = path_side;
     }
 
-    async create_three_face(orientation : "left" | "right" | "top" | "bottom", x : number, y : number): Promise<BlockModel> {
+    async create_three_face(orientation : "left" | "right" | "top" | "bottom", x : number, y : number, color?: number): Promise<BlockModel> {
         // orientation inutilie ici
         let geo_top = this.createBlockGeometry(0.32, 0.16);
         let geo_side = this.createBlockGeometry(0.16, 0.24);
@@ -34,7 +34,7 @@ export class BlockTwoFactory extends SurfaceFactory {
         return model;
     }
 
-    async create_only_top(orientation : "left" | "right" | "top" | "bottom", x : number, y : number): Promise<BlockModel> {
+    async create_only_top(orientation : "left" | "right" | "top" | "bottom", x : number, y : number, color?: number): Promise<BlockModel> {
         let geo_top = this.createBlockGeometry(0.32, 0.16);
 
         let texture_top = await this.createBlockTexture(this.path_top);
@@ -50,7 +50,7 @@ export class BlockTwoFactory extends SurfaceFactory {
         return model;
     }
 
-    async create_only_right(orientation : "left" | "right" | "top" | "bottom", x : number, y : number): Promise<BlockModel> {
+    async create_only_right(orientation : "left" | "right" | "top" | "bottom", x : number, y : number, color?: number): Promise<BlockModel> {
         let geo_side = this.createBlockGeometry(0.16, 0.24);
 
         let texture_side = await this.createBlockTexture(this.path_side);
