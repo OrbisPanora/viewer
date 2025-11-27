@@ -27,7 +27,7 @@ sonarqube-check:
     - sonar-scanner
   allow_failure: true
   only:
-    - master
+    - main
     - dev
     - cicd/pipeline
 
@@ -40,7 +40,7 @@ build-web-image:
     DESTINATION_REGISTRY_IMAGE_NAME: $CI_REGISTRY_IMAGE/orbispanora-web
     DESTINATION_REGISTRY_IMAGE_VERSION: "latest"
   only:
-    - master
+    - main
     - cicd/pipeline
   when: on_success
 
@@ -48,14 +48,14 @@ push-web-image:
   extends: .build-and-push-docker-image
   stage: push
   variables: 
-    DOCKERFILE_RELATIVE_PATH: ./Dockerfile
+    DOCKERFILE_RELATIVE_PATH: ./Dockerfile.prod
     DOCKERFILE_CONTEXT_PATH: .
     DESTINATION_REGISTRY_IMAGE_NAME: $CI_REGISTRY_IMAGE/orbispanora-web
     DESTINATION_REGISTRY_IMAGE_VERSION: "latest"
   dependencies:
     - build-web-image
   only:
-    - master
+    - main
     - cicd/pipeline
   when: on_success
 
@@ -71,6 +71,6 @@ deploy-web:
         NAMESPACE_NAME: iut-inf63-projets-etudiants-orbispanora
         CONTAINER_HTTP_PORT: 4200
     only:
-      - master
+      - main
       - cicd/pipeline
     when: on_success
