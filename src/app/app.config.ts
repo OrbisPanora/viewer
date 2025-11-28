@@ -1,4 +1,5 @@
 import { ApplicationConfig, provideBrowserGlobalErrorListeners, provideZonelessChangeDetection } from '@angular/core';
+import { APP_BASE_HREF } from '@angular/common';
 import { provideRouter } from '@angular/router';
 import { provideHttpClient, withFetch } from '@angular/common/http';
 
@@ -9,8 +10,14 @@ export const appConfig: ApplicationConfig = {
   providers: [
     provideBrowserGlobalErrorListeners(),
     provideZonelessChangeDetection(),
-    provideRouter(routes), 
+    provideRouter(routes),
     provideClientHydration(withEventReplay()),
-    provideHttpClient(withFetch())
+    provideHttpClient(withFetch()),
+    {
+      provide: APP_BASE_HREF,
+      useValue: (typeof ngDevMode !== 'undefined' && ngDevMode)
+        ? '/'
+        : '/kubernetes/iut-inf63-projets-etudiants-orbispanora/orbispanora-web/' 
+    }
   ]
 };
