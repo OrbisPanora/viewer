@@ -19,8 +19,8 @@ export class BlockTwoFactory extends SurfaceFactory {
         let texture_top = await this.createBlockTexture(this.path_top);
         let texture_side = await this.createBlockTexture(this.path_side);
         let material_top = this.createBlockMaterial(texture_top, 0xffffff);
-        let material_side_left = this.createBlockMaterial(texture_side, 0x550000);
-        let material_side_right = this.createBlockMaterial(texture_side, 0x0000aa);
+        let material_side_left = this.createBlockMaterial(texture_side, 0x555555);
+        let material_side_right = this.createBlockMaterial(texture_side, 0xaaaaaa);
 
         let model = new BlockModel();
         model.meshTop = this.createBlockMesh(geo_top, material_top);
