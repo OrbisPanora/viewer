@@ -15,12 +15,13 @@ export class BlockTwoFactory extends SurfaceFactory {
         // orientation inutilie ici
         let geo_top = this.createBlockGeometry(0.32, 0.16);
         let geo_side = this.createBlockGeometry(0.16, 0.24);
+        let color_used = color ? color : 0xffffff;
 
         let texture_top = await this.createBlockTexture(this.path_top);
         let texture_side = await this.createBlockTexture(this.path_side);
-        let material_top = this.createBlockMaterial(texture_top, 0xffffff);
-        let material_side_left = this.createBlockMaterial(texture_side, 0x555555);
-        let material_side_right = this.createBlockMaterial(texture_side, 0xaaaaaa);
+        let material_top = this.createBlockMaterial(texture_top, color_used);
+        let material_side_left = this.createBlockMaterial(texture_side, color_used - 0xaaaaaa);
+        let material_side_right = this.createBlockMaterial(texture_side, color_used - 0x555555);
 
         let model = new BlockModel();
         model.meshTop = this.createBlockMesh(geo_top, material_top);
@@ -39,7 +40,7 @@ export class BlockTwoFactory extends SurfaceFactory {
 
         let texture_top = await this.createBlockTexture(this.path_top);
 
-        let material_top = this.createBlockMaterial(texture_top, 0xffffff);
+        let material_top = this.createBlockMaterial(texture_top, color ? color : 0xffffff);
 
         let model = new BlockModel();
 
@@ -55,12 +56,18 @@ export class BlockTwoFactory extends SurfaceFactory {
 
         let texture_side = await this.createBlockTexture(this.path_side);
 
-        let material_side = this.createBlockMaterial(texture_side, 0x555555);
+        let material_side = this.createBlockMaterial(texture_side, color ? color : 0xffffff);
 
         let model = new BlockModel();
 
         model.meshSideRight = this.createBlockMesh(geo_side, material_side);
-        model.meshSideRight.position.set(x, y, 0);
+
+        if (orientation === "left" || orientation === "top") {
+            model.meshSideRight.position.set(x-0.08, y-0.12, 0);
+        }
+        else {
+            model.meshSideRight.position.set(x+0.08, y-0.12, 0);
+        }
         this.orientation(model.meshSideRight, orientation); // a tester si ca marche bien
         
         return model;

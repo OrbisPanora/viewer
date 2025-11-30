@@ -52,7 +52,8 @@ export class VisualizerPage  { //implements AfterViewInit
     this.initScene();
 
     // fair ca corectement
-    let data = await firstValueFrom(this.dataService.getJSONData('chunks', -6, 3));
+    // a tester : -21 -7 ; -22 -12 ; -18 7
+    let data = await firstValueFrom(this.dataService.getJSONData('chunks', -18, -9)); 
     console.log("data recupere :", data);
 
     //
@@ -89,22 +90,26 @@ export class VisualizerPage  { //implements AfterViewInit
         y=block["z"];
 
         //console.log("x", x, " y", y, " block :", block)
+        //console.log(block["properties"])
         
-        //let images = await this.recupeJSON(block["block"].split(":")[1], block["biome"].split(":")[1]);
+        // LOCAL
+        let images = await this.recupeJSON(block["block"].split(":")[1], block["biome"].split(":")[1]);
+        top_image = images[0];
+        left_image = images[1];
+        // API
+        // images = await firstValueFrom(this.dataService.getNomTexture(block["block"].split(":")[1], block["biome"].split(":")[1]));
+        // //console.log("images.data.textures :", images.data.textures);
+        // top_image = images.data.textures.top;
+        // left_image = images.data.textures.left;
 
-        images = await firstValueFrom(this.dataService.getNomTexture(block["block"].split(":")[1], block["biome"].split(":")[1]));
-        top_image = images.data.textures.top;
-        left_image = images.data.textures.left;
-        console.log("TEST");
         //break;
-        //console.log("images :", images);
-        this.surfaceFactory = new BlockTwoFactory('iso_blocks/' + top_image + '.webp', 'iso_blocks/' + left_image + '.webp', this.textureLoader);
-        console.log("TEST 2");
+        console.log("TEST");
+        this.surfaceFactory = new BlockTwoFactory('iso_blocks/' + top_image, 'iso_blocks/' + left_image, this.textureLoader);
         if (top_image == "") {
-          blockModel = await this.surfaceFactory.create_only_right("left", x, y, 0x555555);
+          blockModel = await this.surfaceFactory.create_only_right("left", x, y, 0xffffff); // bottom --> right pour les cotes
         }
         else if (left_image == "") {
-          //blockModel = await this.surfaceFactory.create_only_top("left", x, y, 0xffffff);
+          blockModel = await this.surfaceFactory.create_only_top("left", x, y, 0xffffff);
         } else {
           blockModel = await this.surfaceFactory.create_three_face("left", x, y, 0xffffff); // zchunk-block["z"] + ycoef?-block["y"]
         }
@@ -125,45 +130,45 @@ export class VisualizerPage  { //implements AfterViewInit
     this.cameraXAnime();
   }
 
-  // private async recupeJSON(block_name: string, biome_name: string): Promise<string[]> {
-  //   let image_top = "";
-  //   let image_left = "";
-  //   let data = await firstValueFrom(this.dataService.getBlockJSON(block_name));
-  //   //let example = this.dataService.getBlockJSON(block_name).pipe(map(data => {
-  //   let keys = Object.keys(data['textures'])
-  //   //console.log("keys :", keys, " nom du block :", block_name);
-  //   if (keys.length == 1) {
-  //     let image = data['textures'][keys[0]].split("/")[1];
-  //     if (keys[0] == "all") {
-  //       // block
-  //       image_top = image+"_top";
-  //       image_left = image+"_left";
-  //       //console.log(" TEST 1 ");
-  //     }
-  //     else {
-  //       // côté unique (ou double ?) a refaire apres
-  //       image_left = image+"_left";
-  //       //console.log(" TEST 3 ");
-  //       //console.log("image_left seul :", image_left);
-  //     }
-  //   } else { //["top", "end"]
-  //     if (keys.includes("top") && keys.includes("side")) {
-  //       // top + side
-  //       image_top = data['textures']["top"].split("/")[1]+"_top";
-  //       image_left = data['textures']["side"].split("/")[1]+"_left";
-  //       //console.log(" TEST 3 ");
+  private async recupeJSON(block_name: string, biome_name: string): Promise<string[]> {
+    let image_top = "";
+    let image_left = "";
+    let data = await firstValueFrom(this.dataService.getBlockJSON(block_name));
+    //let example = this.dataService.getBlockJSON(block_name).pipe(map(data => {
+    let keys = Object.keys(data['textures'])
+    //console.log("keys :", keys, " nom du block :", block_name);
+    if (keys.length == 1 || keys.includes("vine")) {
+      let image = data['textures'][keys[0]].split("/")[1];
+      if (keys[0] == "all") {
+        // block
+        image_top = image+"_top.webp";
+        image_left = image+"_left.webp";
+        //console.log(" TEST 1 ");
+      }
+      else {
+        // côté unique (ou double ?) a refaire apres
+        image_left = image+"_left.webp";
+        //console.log(" TEST 3 ");
+        //console.log("image_left seul :", image_left);
+      }
+    } else { //["top", "end"]
+      if (keys.includes("top") && keys.includes("side")) {
+        // top + side
+        image_top = data['textures']["top"].split("/")[1]+"_top.webp";
+        image_left = data['textures']["side"].split("/")[1]+"_left.webp";
+        //console.log(" TEST 3 ");
         
-  //     } else if (keys.includes("end") && keys.includes("side")) {
-  //       image_top = data['textures']["end"].split("/")[1]+"_top";
-  //       image_left = data['textures']["side"].split("/")[1]+"_left";
-  //     } else {
-  //       console.log(" TODO");
-  //     }
-  //   }
-  //   //}));
-  //   //console.log("image_top :", image_top, " image_left :", image_left);
-  //   return [image_top, image_left];
-  // }
+      } else if (keys.includes("end") && keys.includes("side")) {
+        image_top = data['textures']["end"].split("/")[1]+"_top.webp";
+        image_left = data['textures']["side"].split("/")[1]+"_left.webp";
+      } else {
+        console.log(" TODO " + keys);
+      }
+    }
+    //}));
+    //console.log("image_top :", image_top, " image_left :", image_left);
+    return [image_top, image_left];
+  }
 
   private initScene() {
     this.scene = new THREE.Scene();

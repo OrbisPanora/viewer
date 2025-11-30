@@ -3,6 +3,7 @@ export interface SurfaceBlocks {
     y : number;
     z : number;
     block : string;
+    properties : {string : string; };
     biome : string;
-    is_surface : boolean;
+    is_surface ?: boolean;
 }
