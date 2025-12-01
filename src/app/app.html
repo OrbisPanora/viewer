@@ -1,0 +1,18 @@
+<header class="navbar">
+  <div class="nav-container">
+    <a routerLink="/" class="logo">
+      <img src="/assets/opw.png" alt="OrbisPanora">
+      <span>OrbisPanora</span>
+    </a>
+    
+    <nav class="nav-links">
+      <a routerLink="/" routerLinkActive="active" [routerLinkActiveOptions]="{exact: true}">Home</a>
+      <a routerLink="/documentation" routerLinkActive="active">Documentation</a>
+      <a routerLink="/api" routerLinkActive="active">API</a>
+      <a routerLink="/about" routerLinkActive="active">About</a>
+    </nav>
+  </div>
+</header>
+
+<router-outlet />
+
