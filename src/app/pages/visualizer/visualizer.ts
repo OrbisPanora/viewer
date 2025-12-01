@@ -26,6 +26,11 @@ export class VisualizerPage  { //implements AfterViewInit
   public textureLoader!: THREE.TextureLoader;
   private animationFrameId!: number;
 
+  // Variables pour les contrôles de la caméra
+  private isDragging = false;
+  private previousMousePosition = { x: 0, y: 0 };
+  private cameraSpeed = 0.005;
+
   @ViewChild('canvasContainer', {static: true}) canvasContainer!: ElementRef;
 
   constructor(private router: Router, private dataService: DataService) {}
@@ -72,6 +77,7 @@ export class VisualizerPage  { //implements AfterViewInit
     let x, y, order = 0;
     let blockModel;
     let images, left_image, top_image;
+    let color : number = 0xffffff;
     for (let block of data["data"]["surface_blocks"]){
       //console.log("order :", order);
       // ajouter un y + ajouter un decalage smart
@@ -96,25 +102,28 @@ export class VisualizerPage  { //implements AfterViewInit
         //console.log(block["properties"])
         
         // LOCAL
-        let images = await this.recupeJSON(block["block"].split(":")[1], block["biome"].split(":")[1]);
-        top_image = images[0];
-        left_image = images[1];
+        // let images = await this.recupeJSON(block["block"].split(":")[1], block["biome"].split(":")[1]);
+        // top_image = images[0];
+        // left_image = images[1];
         // API
-        // images = await firstValueFrom(this.dataService.getNomTexture(block["block"].split(":")[1], block["biome"].split(":")[1]));
-        // //console.log("images.data.textures :", images.data.textures);
-        // top_image = images.data.textures.top;
-        // left_image = images.data.textures.left;
+        images = await firstValueFrom(this.dataService.getNomTexture(block["block"].split(":")[1], block["biome"].split(":")[1], JSON.stringify(block["properties"])));
+        //console.log("images.data.textures :", images.data.textures);
+        top_image = images.data.textures.top;
+        left_image = images.data.textures.left;
+        color = images.data.textures.color ? parseInt(images.data.textures.color.slice(1), 16) : 0xffffff;
+        //console.log("color : ", color, "hexa : ", images.data.textures.color?.slice(1))
+        //console.log("textures : ", images.data.textures)
 
         //break;
         console.log("TEST");
         this.surfaceFactory = new BlockTwoFactory('iso_blocks/' + top_image, 'iso_blocks/' + left_image, this.textureLoader);
-        if (top_image == "") {
-          blockModel = await this.surfaceFactory.create_only_right("left", x, y, 0xffffff); // bottom --> right pour les cotes
+        if (top_image == null) {
+          blockModel = await this.surfaceFactory.create_only_right("left", x, y, color); // bottom --> right pour les cotes
         }
-        else if (left_image == "") {
-          blockModel = await this.surfaceFactory.create_only_top("left", x, y, 0xffffff);
+        else if (left_image == null) {
+          blockModel = await this.surfaceFactory.create_only_top("left", x, y, color);
         } else {
-          blockModel = await this.surfaceFactory.create_three_face("left", x, y, 0xffffff); // zchunk-block["z"] + ycoef?-block["y"]
+          blockModel = await this.surfaceFactory.create_three_face("left", x, y, color); // zchunk-block["z"] + ycoef?-block["y"]
         }
         if ("grass_block_side_overlay_left_left" == left_image) {
           console.log("OVERLAY DETECTED");
@@ -131,8 +140,82 @@ export class VisualizerPage  { //implements AfterViewInit
     }
 
     this.cameraXAnime();
+    this.setupCameraControls();
   }
 
+  // camera controles
+  private setupCameraControls() {
+    const canvas = this.renderer.domElement;
+
+    // Mouse down - commence le drag
+    canvas.addEventListener('mousedown', (event: MouseEvent) => {
+      this.isDragging = true;
+      this.previousMousePosition = {
+        x: event.clientX,
+        y: event.clientY
+      };
+    });
+
+    // Mouse move - déplace la caméra
+    canvas.addEventListener('mousemove', (event: MouseEvent) => {
+      if (!this.isDragging) return;
+
+      const deltaX = event.clientX - this.previousMousePosition.x;
+      const deltaY = event.clientY - this.previousMousePosition.y;
+
+      // Déplace la caméra sur X et Y uniquement (pas de rotation)
+      this.camera.position.x -= deltaX * this.cameraSpeed;
+      this.camera.position.y += deltaY * this.cameraSpeed;
+
+      this.previousMousePosition = {
+        x: event.clientX,
+        y: event.clientY
+      };
+    });
+
+    // Mouse up - arrête le drag
+    canvas.addEventListener('mouseup', () => {
+      this.isDragging = false;
+    });
+
+    // Mouse leave - arrête le drag si on sort du canvas
+    canvas.addEventListener('mouseleave', () => {
+      this.isDragging = false;
+    });
+
+    // Support tactile (mobile)
+    canvas.addEventListener('touchstart', (event: TouchEvent) => {
+      if (event.touches.length === 1) {
+        this.isDragging = true;
+        this.previousMousePosition = {
+          x: event.touches[0].clientX,
+          y: event.touches[0].clientY
+        };
+      }
+    });
+
+    canvas.addEventListener('touchmove', (event: TouchEvent) => {
+      if (!this.isDragging || event.touches.length !== 1) return;
+      event.preventDefault();
+
+      const deltaX = event.touches[0].clientX - this.previousMousePosition.x;
+      const deltaY = event.touches[0].clientY - this.previousMousePosition.y;
+
+      this.camera.position.x -= deltaX * this.cameraSpeed;
+      this.camera.position.y += deltaY * this.cameraSpeed;
+
+      this.previousMousePosition = {
+        x: event.touches[0].clientX,
+        y: event.touches[0].clientY
+      };
+    });
+
+    canvas.addEventListener('touchend', () => {
+      this.isDragging = false;
+    });
+  }
+
+  // a effacer un fois api bien fini
   private async recupeJSON(block_name: string, biome_name: string): Promise<string[]> {
     let image_top = "";
     let image_left = "";
@@ -207,6 +290,7 @@ export class VisualizerPage  { //implements AfterViewInit
     this.camera.position.y = 0;
     this.camera.position.x = 0;
     this.camera.lookAt(0, 0, 0);
+    this.camera.updateProjectionMatrix();
 
     this.animate();
   }

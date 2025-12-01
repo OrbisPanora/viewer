@@ -27,8 +27,8 @@ export class DataService {
     return this.http.get(`iso_blocks/${name}.webp`, { responseType: 'blob' });
   }
 
-  getNomTexture(name: string, biome: string): Observable<ApiResponse<ImageNom>> {
-    return this.http.get<ApiResponse<ImageNom>>(`http://localhost:8000/api/resources/json?id=${name}&namespace=minecraft&properties=%7B%7D&biome=${biome}`);
+  getNomTexture(name: string, biome: string, properties: string): Observable<ApiResponse<ImageNom>> {
+    return this.http.get<ApiResponse<ImageNom>>(`http://localhost:8000/api/resources/json?id=${name}&namespace=minecraft&properties=${properties}&biome=${biome}`);
     //http://localhost:8000/api/resources/json?id=gold_block&namespace=minecraft&properties=%7B%7D&biome=biome
   }
 

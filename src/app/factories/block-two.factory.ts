@@ -20,8 +20,9 @@ export class BlockTwoFactory extends SurfaceFactory {
         let texture_top = await this.createBlockTexture(this.path_top);
         let texture_side = await this.createBlockTexture(this.path_side);
         let material_top = this.createBlockMaterial(texture_top, color_used);
-        let material_side_left = this.createBlockMaterial(texture_side, color_used - 0xaaaaaa);
-        let material_side_right = this.createBlockMaterial(texture_side, color_used - 0x555555);
+        // a fixé
+        let material_side_left = this.createBlockMaterial(texture_side, color_used * 0.8); //- 0xaaaaaa
+        let material_side_right = this.createBlockMaterial(texture_side, color_used *0.9); //- 0x555555
 
         let model = new BlockModel();
         model.meshTop = this.createBlockMesh(geo_top, material_top);
@@ -56,7 +57,7 @@ export class BlockTwoFactory extends SurfaceFactory {
 
         let texture_side = await this.createBlockTexture(this.path_side);
 
-        let material_side = this.createBlockMaterial(texture_side, color ? color : 0xffffff);
+        let material_side = this.createBlockMaterial(texture_side, color ? color : 0xffffff); //- 0xaaaaaa ? : 0x555555
 
         let model = new BlockModel();
 
