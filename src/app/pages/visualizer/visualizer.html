@@ -1,4 +1,4 @@
-<!-- <div class="visualizer-container">
+<div class="visualizer-container">
   <div class="controls">
     <button class="back-button" (click)="goBack()">
       <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2">
@@ -9,10 +9,20 @@
     <h1>3D Visualizer</h1>
   </div>
   
-  <div class="viewport">
+  <!-- <div class="viewport">
     <div class="placeholder">
       <p>3D Engine Placeholder</p>
       <p class="info">The rendering engine will be integrated here</p>
     </div>
+  </div> -->
+  <div class="viewport">
+    <!-- visualizer.html -->
+    <div class="visualizer-container">
+      <!-- Ajoutez ce conteneur pour le canvas -->
+      <div #canvasContainer class="canvas-container"></div>
+      
+      <!-- Vos autres éléments UI -->
+      <!-- <button (click)="goBack()">Retour</button> -->
+    </div>
   </div>
-</div> -->
+</div>

@@ -1,4 +1,4 @@
-import { Component, inject, signal, AfterViewInit, PLATFORM_ID  } from '@angular/core';
+import { Component, inject, PLATFORM_ID, OnDestroy, ElementRef, ViewChild  } from '@angular/core';
 import { Router } from '@angular/router';
 import * as THREE from 'three';
 import { DataService } from '../../services/data.service';
@@ -24,6 +24,9 @@ export class VisualizerPage  { //implements AfterViewInit
   public renderer!: THREE.WebGLRenderer;
   public surfaceFactory!: SurfaceFactory;
   public textureLoader!: THREE.TextureLoader;
+  private animationFrameId!: number;
+
+  @ViewChild('canvasContainer', {static: true}) canvasContainer!: ElementRef;
 
   constructor(private router: Router, private dataService: DataService) {}
 
@@ -33,7 +36,7 @@ export class VisualizerPage  { //implements AfterViewInit
 
 
   private animate() {
-    requestAnimationFrame(() => this.animate());
+    this.animationFrameId = requestAnimationFrame(() => this.animate());
 
     this.renderer.render(this.scene, this.camera);
   }
@@ -52,8 +55,8 @@ export class VisualizerPage  { //implements AfterViewInit
     this.initScene();
 
     // fair ca corectement
-    // a tester : -21 -7 ; -22 -12 ; -18 7
-    let data = await firstValueFrom(this.dataService.getJSONData('chunks', -18, -9)); 
+    // a tester : -21 -7 ; -22 -12 ; -18 7 ; -18 -9
+    let data = await firstValueFrom(this.dataService.getJSONData('chunks', -6, 3)); 
     console.log("data recupere :", data);
 
     //
@@ -173,19 +176,80 @@ export class VisualizerPage  { //implements AfterViewInit
   private initScene() {
     this.scene = new THREE.Scene();
     this.scene.background = new THREE.Color(0x77b5fe);
-    this.camera = new THREE.PerspectiveCamera(75, window.innerWidth / window.innerHeight, 0.1, 1000);
-    this.renderer = new THREE.WebGLRenderer();
+
+    const aspect = window.innerWidth / window.innerHeight;
+    this.camera = new THREE.PerspectiveCamera(75, aspect, 0.1, 1000);
+
+    this.renderer = new THREE.WebGLRenderer({ antialias: true });
     this.renderer.setSize(window.innerWidth, window.innerHeight);
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
-    document.body.appendChild(this.renderer.domElement);
+
+    this.canvasContainer.nativeElement.appendChild(this.renderer.domElement);
+    //document.body.appendChild(this.renderer.domElement);
     this.textureLoader = new THREE.TextureLoader();
+
+    // gestionnaire d'événement pour le redimensionnement
+    window.addEventListener('resize', () => this.onWindowResize());
+  }
+
+  private onWindowResize(){
+    if (!this.camera || !this.renderer) return;
+    
+    this.camera.aspect = window.innerWidth / window.innerHeight;
+    this.camera.updateProjectionMatrix();
+    this.renderer.setSize(window.innerWidth, window.innerHeight);
   }
 
   private cameraXAnime() {
+    if (!this.camera) return;
+
     this.camera.position.z = 2.5;
     this.camera.position.y = 0;
     this.camera.position.x = 0;
+    this.camera.lookAt(0, 0, 0);
 
     this.animate();
+  }
+
+  ngOnDestroy() {
+    // Annule l'animation frame
+    if (this.animationFrameId) {
+      cancelAnimationFrame(this.animationFrameId);
+    }
+
+    // Supprime le canvas du DOM
+    if (this.renderer?.domElement?.parentNode) {
+      this.renderer.domElement.parentNode.removeChild(this.renderer.domElement);
+    }
+
+    // Nettoy les ressources Three.js
+    if(this.scene){
+      this.scene.traverse((object: any) => {
+        if (object.geometry) object.geometry.dispose();
+        if (object.material) {
+          if (Array.isArray(object.material)) {
+            object.material.forEach((material: THREE.Material) => material.dispose());
+          } else {
+            object.material.dispose();
+          }
+        }
+        if (object.texture) object.texture.dispose();
+      });
+      this.scene.clear();
+    }
+
+    if (this.renderer) {
+      this.renderer.dispose();
+      this.renderer.forceContextLoss();
+    }
+
+    if (window){
+      window.removeEventListener('resize', () => this.onWindowResize());
+    }
+
+    this.scene = null!;
+    this.camera = null!;
+    this.renderer = null!;
+    this.textureLoader = null!;
   }
 }
