@@ -34,6 +34,10 @@ export abstract class SurfaceFactory {
         return new THREE.Mesh(geometry, material);
     }
 
+    public creatInstancedMesh(geometry: THREE.PlaneGeometry, material: THREE.MeshBasicMaterial, count: number): THREE.InstancedMesh {
+        return new THREE.InstancedMesh(geometry, material, count);
+    }
+
     public orientation(side: THREE.Mesh, orientation: "left" | "right" | "top" | "bottom") {
         if (orientation === "left") {
             side.scale.x = 1;

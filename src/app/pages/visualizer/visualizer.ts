@@ -106,6 +106,7 @@ export class VisualizerPage  { //implements AfterViewInit
         // top_image = images[0];
         // left_image = images[1];
         // API
+        if (block["block"].split(":")[1] == "vine") continue;
         images = await firstValueFrom(this.dataService.getNomTexture(block["block"].split(":")[1], block["biome"].split(":")[1], JSON.stringify(block["properties"])));
         //console.log("images.data.textures :", images.data.textures);
         top_image = images.data.textures.top;
@@ -145,6 +146,8 @@ export class VisualizerPage  { //implements AfterViewInit
 
   // camera controles
   private setupCameraControls() {
+    if (!isPlatformBrowser(this.platformId)) return;
+
     const canvas = this.renderer.domElement;
 
     // Mouse down - commence le drag
@@ -296,6 +299,10 @@ export class VisualizerPage  { //implements AfterViewInit
   }
 
   ngOnDestroy() {
+    if (!isPlatformBrowser(this.platformId)) {
+      return; // Skip cleanup on server-side rendering
+    }
+
     // Annule l'animation frame
     if (this.animationFrameId) {
       cancelAnimationFrame(this.animationFrameId);
@@ -327,9 +334,7 @@ export class VisualizerPage  { //implements AfterViewInit
       this.renderer.forceContextLoss();
     }
 
-    if (window){
-      window.removeEventListener('resize', () => this.onWindowResize());
-    }
+    window.removeEventListener('resize', () => this.onWindowResize());
 
     this.scene = null!;
     this.camera = null!;
