@@ -1,0 +1,48 @@
+{
+  "status": "success",
+  "data": {
+    "chunk_x": -6,
+    "chunk_z": 3,
+    "heightmap": null,
+    "surface_blocks": [
+      {
+        "grass_block": [
+          {
+            "biome": "old_growth_birch_forest",
+            "properties": {
+              "snowy": "false"
+            },
+            "side": 0,
+            "coordinates": [
+                [
+                    0,
+                    0,
+                    0
+                ],
+                [
+                    0.16,
+                    0,
+                    0.08
+                ],
+                [
+                    0.32,
+                    0,
+                    0
+                ],
+                [
+                    0.16,
+                    0,
+                    -0.08
+                ]
+            ]
+          }
+        ]
+      }
+    ],
+    "render_data": null,
+    "sections": null,
+    "palette": null
+  },
+  "error": null,
+  "timestamp": "2025-12-04T08:22:19.194833"
+}

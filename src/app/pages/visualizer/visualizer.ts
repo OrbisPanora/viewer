@@ -8,7 +8,7 @@ import { isPlatformBrowser } from '@angular/common';
 import { firstValueFrom } from 'rxjs';
 import { BlockTwoFactory } from '../../factories/block-two.factory';
 
-import JSONK from '../../../../public/test4.json';
+import JSONK from '../../../../public/test5.json';
 
 @Component({
   selector: 'app-visualizer',
@@ -129,7 +129,7 @@ export class VisualizerPage  { //implements AfterViewInit
               blockModel.instancedMeshLeft.setMatrixAt(counter, m);
 
               pos.set(coordinate[0]+0.08, coordinate[2]-0.12, 0);
-              scale.set(1,-1,1);
+              scale.set(-1,1,1);
               quat.set(0, 0, 0, 1);
               m.compose(pos, quat, scale);
               blockModel.instancedMeshRight.setMatrixAt(counter, m);
