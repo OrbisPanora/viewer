@@ -3,11 +3,12 @@ import { Router } from '@angular/router';
 import * as THREE from 'three';
 import { DataService } from '../../services/data.service';
 import { SurfaceFactory } from '../../factories/surface.factory';
-import { BlockTwoFactory } from '../../factories/block-two.factory';
+import { SurfaceBlocks } from '../../models/surface-blocks.model';
 import { isPlatformBrowser } from '@angular/common';
 
 //import JSONK from '../../../../public/test.json';
 import { firstValueFrom } from 'rxjs';
+import { BlockTwoFactory } from '../../factories/block-two.factory';
 
 @Component({
   selector: 'app-visualizer',
@@ -63,81 +64,131 @@ export class VisualizerPage  { //implements AfterViewInit
     // a tester : -21 -7 ; -22 -12 ; -18 7 ; -18 -9
     let data = await firstValueFrom(this.dataService.getJSONData('chunks', -6, 3)); 
     console.log("data recupere :", data);
+    let dict: {[key: string]: SurfaceBlocks[]; } = data["data"]["surface_blocks"][0];
+    //let texture_dict = await firstValueFrom(this.dataService.postDictBlocks(dict));
+    //console.log("textures : ", texture_dict)
+    // dict a envoyer a cris
 
-    //
-    // const pointGeometry = new THREE.SphereGeometry(0.05, 32, 32);
-    // const pointMaterial = new THREE.MeshBasicMaterial({ color: 0x00ff00 });
-    // let pointMesh;
-    //
 
-    // let xchunk = Math.abs(JSONK["data"]["chunk_x"]*16);
-    // let zchunk = Math.abs(JSONK["data"]["chunk_z"]*16);
-    // let ychunk = 75;//Math.min(...JSONK["data"]["heightmap"][0]); // min marche mieux pourqoui ?? 
-    // console.log("xchunk :", xchunk, " zchunk :", zchunk, " ychunk :", ychunk);
+
     let x, y, order = 0;
     let blockModel;
     let images, left_image, top_image;
     let color : number = 0xffffff;
-    for (let block of data["data"]["surface_blocks"]){
-      //console.log("order :", order);
-      // ajouter un y + ajouter un decalage smart
-      //if (block["y"]>74 && block["y"]<90){ //&& (order<5555 || (order>45&&order<50))){ // break; 78
-          //console.log("order :", order);
-        // let i = Math.abs(Math.abs(block["x"]) - xchunk);
-        // let j = Math.abs(Math.abs(block["z"]) - zchunk);
-        // let z = Math.abs(Math.abs(block["y"]) - ychunk);
-        // x = 0.16*(i-j);
-        // y = -0.08*(i+j)+0.08*16 + 0.16*z;
-        // x = Math.round(x * 100) / 100;
-        // y = Math.round(y * 100) / 100;
-        // console.log(" => i:", i, " j:", j, " => x:", x, " y:", y);
-        /*pointMesh = new THREE.Mesh(pointGeometry, pointMaterial);
-        pointMesh.position.set(x, y, 0);96 48-49
-        this.scene.add(pointMesh);*/
+    let count = data["data"]["surface_blocks"].length;
+    console.log(count);
+    let block : string;
+    let block_data : SurfaceBlocks[];
+    
+    let surface_block: SurfaceBlocks;
+    let coordinates: number[][];
+    let coordinate : number[];
+    let m = new THREE.Matrix4();
+    const pos = new THREE.Vector3();
+    const quat = new THREE.Quaternion(); // rotation identique pour tout le monde
+    const scale = new THREE.Vector3();
 
-        x=block["x"];
-        y=block["z"];
+    let counter = 0;
+    // a continuer
+    for (block in dict){
+      block_data = dict[block];
+      console.log(block, block_data);
+      for (surface_block of block_data){
+        // cree instance mesh icis
+        let images = await this.recupeJSON(block, surface_block["biome"]);
+        top_image = images[0];
+        left_image = images[1];
 
-        //console.log("x", x, " y", y, " block :", block)
-        //console.log(block["properties"])
-        
-        // LOCAL
-        // let images = await this.recupeJSON(block["block"].split(":")[1], block["biome"].split(":")[1]);
-        // top_image = images[0];
-        // left_image = images[1];
-        // API
-        if (block["block"].split(":")[1] == "vine") continue;
-        images = await firstValueFrom(this.dataService.getNomTexture(block["block"].split(":")[1], block["biome"].split(":")[1], JSON.stringify(block["properties"])));
-        //console.log("images.data.textures :", images.data.textures);
-        top_image = images.data.textures.top;
-        left_image = images.data.textures.left;
-        color = images.data.textures.color ? parseInt(images.data.textures.color.slice(1), 16) : 0xffffff;
-        //console.log("color : ", color, "hexa : ", images.data.textures.color?.slice(1))
-        //console.log("textures : ", images.data.textures)
 
-        //break;
-        console.log("TEST");
-        this.surfaceFactory = new BlockTwoFactory('iso_blocks/' + top_image, 'iso_blocks/' + left_image, this.textureLoader);
-        if (top_image == null) {
-          blockModel = await this.surfaceFactory.create_only_right("left", x, y, color); // bottom --> right pour les cotes
+        this.surfaceFactory = new BlockTwoFactory('iso_blocks/' + top_image, 'iso_blocks/' + left_image, this.textureLoader)
+        coordinates = surface_block["coordinates"]
+        console.log(top_image, left_image);
+
+        let len = coordinates.length;
+
+        if (top_image != null) {
+          blockModel = await this.surfaceFactory.create_InstancedMesh_all(len, color);
         }
-        else if (left_image == null) {
-          blockModel = await this.surfaceFactory.create_only_top("left", x, y, color);
-        } else {
-          blockModel = await this.surfaceFactory.create_three_face("left", x, y, color); // zchunk-block["z"] + ycoef?-block["y"]
+        else if (left_image != null) {
+          blockModel = await this.surfaceFactory.create_InstancedMesh_left(len, color);
         }
-        if ("grass_block_side_overlay_left_left" == left_image) {
-          console.log("OVERLAY DETECTED");
-          break;
+        else {
+          console.log("TODO")
+          // TODO 
         }
         
-        //console.log(blockModel);
-        if(block["y"]!=0){
-          blockModel.ordrer(order*block["y"]);
+        counter = 0;
+        for (coordinate of coordinates){
+          if(coordinate.length != 0){
+
+            if (top_image != null){
+              m.makeTranslation(coordinate[0], coordinate[2], 0); // -coordinate[1]
+              blockModel.instancedMeshTop.setMatrixAt(counter, m);
+
+              m.makeTranslation(coordinate[0]-0.08, coordinate[2]-0.12, 0);
+              blockModel.instancedMeshLeft.setMatrixAt(counter, m);
+
+              pos.set(coordinate[0]+0.08, coordinate[2]-0.12, 0);
+              scale.set(1,-1,1);
+              quat.set(0, 0, 0, 1);
+              m.compose(pos, quat, scale);
+              blockModel.instancedMeshRight.setMatrixAt(counter, m);
+            }
+            else if (left_image != null){
+              m.makeTranslation(coordinate[0]-0.08, coordinate[2]-0.12, 0);
+              blockModel.instancedMeshLeft.setMatrixAt(counter, m);
+            }
+            else{
+              console.log("TEST");
+            }
+          
+          
+          }
+          // if(coordinate[1]!=0){
+          //   blockModel.instance_ordrer(order*coordinate[1]);
+          // }
+          blockModel.instance_ordrer(order);
+          counter = counter + 1;
+          order=order+1; 
         }
         blockModel.save(this.scene);
-      //}
-      order=order+1;
+        //afficher ici
+      }
+      //   x=block["x"];
+      //   y=block["z"];
+
+
+      //   if (block["block"].split(":")[1] == "vine") continue;
+      //   images = await firstValueFrom(this.dataService.getNomTexture(block["block"].split(":")[1], block["biome"].split(":")[1], JSON.stringify(block["properties"])));
+  
+      //   top_image = images.data.textures.top;
+      //   left_image = images.data.textures.left;
+      //   color = images.data.textures.color ? parseInt(images.data.textures.color.slice(1), 16) : 0xffffff;
+        
+
+      //   //break;
+      //   console.log("TEST");
+      //   this.surfaceFactory = new BlockTwoFactory('iso_blocks/' + top_image, 'iso_blocks/' + left_image, this.textureLoader);
+      //   if (top_image == null) {
+      //     blockModel = await this.surfaceFactory.create_only_right("left", x, y, color); // bottom --> right pour les cotes
+      //   }
+      //   else if (left_image == null) {
+      //     blockModel = await this.surfaceFactory.create_only_top("left", x, y, color);
+      //   } else {
+      //     blockModel = await this.surfaceFactory.create_three_face("left", x, y, color); // zchunk-block["z"] + ycoef?-block["y"]
+      //   }
+      //   if ("grass_block_side_overlay_left_left" == left_image) {
+      //     console.log("OVERLAY DETECTED");
+      //     break;
+      //   }
+        
+      //   //console.log(blockModel);
+      //   if(block["y"]!=0){
+      //     blockModel.ordrer(order*block["y"]);
+      //   }
+      //   blockModel.save(this.scene);
+      // //}
+      // order=order+1;
     }
 
     this.cameraXAnime();
@@ -219,9 +270,9 @@ export class VisualizerPage  { //implements AfterViewInit
   }
 
   // a effacer un fois api bien fini
-  private async recupeJSON(block_name: string, biome_name: string): Promise<string[]> {
-    let image_top = "";
-    let image_left = "";
+  private async recupeJSON(block_name: string, biome_name: string): Promise<(string | null)[]> {
+    let image_top = null;
+    let image_left = null;
     let data = await firstValueFrom(this.dataService.getBlockJSON(block_name));
     //let example = this.dataService.getBlockJSON(block_name).pipe(map(data => {
     let keys = Object.keys(data['textures'])

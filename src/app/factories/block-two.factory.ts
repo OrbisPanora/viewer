@@ -74,4 +74,29 @@ export class BlockTwoFactory extends SurfaceFactory {
         return model;
     }
 
+    async create_InstancedMesh_all(count: number , color?: number): Promise<BlockModel> {
+        // cree objet de color
+        let geo_top = this.createBlockGeometry(0.32, 0.16);
+        let geo_side = this.createBlockGeometry(0.16, 0.24);
+        let texture_top = await this.createBlockTexture(this.path_top);
+        let texture_side = await this.createBlockTexture(this.path_side);
+        let material_top = this.createBlockMaterial(texture_top, color ? color : 0xffffff); //- 0xaaaaaa ? : 0x555555
+        let material_left = this.createBlockMaterial(texture_side, color ? color * 1.2 : 0x555555);
+        let material_right = this.createBlockMaterial(texture_side, color ? color * 0.9 : 0xaaaaaa);
+        let model = new BlockModel();
+        model.instancedMeshTop = this.creatInstancedMesh(geo_top, material_top, count);
+        model.instancedMeshLeft = this.creatInstancedMesh(geo_side, material_left, count);
+        model.instancedMeshRight = this.creatInstancedMesh(geo_side, material_right, count);
+        return model;
+    }
+
+    async create_InstancedMesh_left(count: number, color?: number): Promise<BlockModel> {
+        let geo = this.createBlockGeometry(0.16, 0.24);
+        let texture = await this.createBlockTexture(this.path_side);
+        let material = this.createBlockMaterial(texture, color ? color : 0xffffff); //- 0xaaaaaa ? : 0x555555
+        let model = new BlockModel();
+        model.instancedMeshLeft = this.creatInstancedMesh(geo, material, count);
+        return model;
+    }
+
 }

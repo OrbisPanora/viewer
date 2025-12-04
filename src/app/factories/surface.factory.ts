@@ -13,6 +13,11 @@ export abstract class SurfaceFactory {
     abstract create_only_top(orientation : "left" | "right" | "top" | "bottom", x : number, y : number, color?: number): Promise<any>;
 
     abstract create_only_right(orientation : "left" | "right" | "top" | "bottom", x : number, y : number, color?: number): Promise<any>;
+
+    abstract create_InstancedMesh_all(count: number , color?: number): Promise<any>;
+
+    abstract create_InstancedMesh_left(count: number, color?: number): Promise<any>;
+
     public createBlockGeometry(size1 : number = 0.32, size2 : number = 0.16): THREE.PlaneGeometry {
         return new THREE.PlaneGeometry(size1, size2);
     }
@@ -27,7 +32,7 @@ export abstract class SurfaceFactory {
     }
 
     public createBlockMaterial(texture: THREE.Texture, color: number): THREE.MeshBasicMaterial {
-        return new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, color: color });
+        return new THREE.MeshBasicMaterial({ map: texture, transparent: true, depthWrite: false, color: color, side: THREE.DoubleSide });
     }
 
     public createBlockMesh(geometry: THREE.PlaneGeometry, material: THREE.MeshBasicMaterial): THREE.Mesh {

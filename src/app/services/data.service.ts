@@ -4,6 +4,7 @@ import { Observable } from 'rxjs';
 import { ApiResponse } from '../models/api-response.model';
 import { ChunkData } from '../models/chunk-data.model';
 import { ImageNom } from '../models/image-nom.model';
+import { SurfaceBlocks } from '../models/surface-blocks.model';
 
 @Injectable({
   providedIn: 'root'
@@ -30,6 +31,10 @@ export class DataService {
   getNomTexture(name: string, biome: string, properties: string): Observable<ApiResponse<ImageNom>> {
     return this.http.get<ApiResponse<ImageNom>>(`http://localhost:8000/api/resources/json?id=${name}&namespace=minecraft&properties=${properties}&biome=${biome}`);
     //http://localhost:8000/api/resources/json?id=gold_block&namespace=minecraft&properties=%7B%7D&biome=biome
+  }
+
+  postDictBlocks(dict : {[key: string]: SurfaceBlocks[]; }): Observable<any>{
+    return this.http.post<ApiResponse<any>>("http://localhost:8000/api/resources/palette", dict);
   }
 
 
