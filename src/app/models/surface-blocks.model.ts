@@ -1,6 +1,6 @@
 export interface SurfaceBlocks {
     biome : string;
-    properties : {string : string; };
+    properties : {[key: string] : string; };
     side : number;
-    coordinates : [][];
+    coordinates : number[][];
 }

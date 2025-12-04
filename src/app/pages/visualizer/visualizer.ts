@@ -5,10 +5,10 @@ import { DataService } from '../../services/data.service';
 import { SurfaceFactory } from '../../factories/surface.factory';
 import { SurfaceBlocks } from '../../models/surface-blocks.model';
 import { isPlatformBrowser } from '@angular/common';
-
-//import JSONK from '../../../../public/test.json';
 import { firstValueFrom } from 'rxjs';
 import { BlockTwoFactory } from '../../factories/block-two.factory';
+
+import JSONK from '../../../../public/test4.json';
 
 @Component({
   selector: 'app-visualizer',
@@ -62,9 +62,9 @@ export class VisualizerPage  { //implements AfterViewInit
 
     // fair ca corectement
     // a tester : -21 -7 ; -22 -12 ; -18 7 ; -18 -9
-    let data = await firstValueFrom(this.dataService.getJSONData('chunks', -6, 3)); 
-    console.log("data recupere :", data);
-    let dict: {[key: string]: SurfaceBlocks[]; } = data["data"]["surface_blocks"][0];
+    //let data = await firstValueFrom(this.dataService.getJSONData('chunks', -6, 3)); 
+    //console.log("data recupere :", data);
+    let dict: {[key: string]: SurfaceBlocks[]; } = JSONK["data"]["surface_blocks"][0]; //data["data"]["surface_blocks"][0];
     //let texture_dict = await firstValueFrom(this.dataService.postDictBlocks(dict));
     //console.log("textures : ", texture_dict)
     // dict a envoyer a cris
@@ -75,7 +75,7 @@ export class VisualizerPage  { //implements AfterViewInit
     let blockModel;
     let images, left_image, top_image;
     let color : number = 0xffffff;
-    let count = data["data"]["surface_blocks"].length;
+    let count = JSONK["data"]["surface_blocks"].length; //data["data"]["surface_blocks"].length;
     console.log(count);
     let block : string;
     let block_data : SurfaceBlocks[];
