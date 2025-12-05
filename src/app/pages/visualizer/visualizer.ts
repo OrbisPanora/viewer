@@ -23,7 +23,8 @@ export class VisualizerPage  { //implements AfterViewInit
   public app!: PIXI.Application;
   public surfaceFactory!: SurfaceFactory;
   public tilemap!: Tilemap;
-  public texture!: PIXI.TextureSource<any>;
+  public atlas!: any;
+  //public texture: PIXI.TextureSource<any>[] = [];
 
   @ViewChild('canvasContainer', {static: true}) canvasContainer!: ElementRef;
 
@@ -44,41 +45,49 @@ export class VisualizerPage  { //implements AfterViewInit
 
     // Créer un simple rectangle
     const rectangle = new PIXI.Graphics();
-    rectangle.rect(8, 0, 20, 10);
+    rectangle.rect(100, 100, 50, 50);
     rectangle.fill({ color: 0xff0000 });
     this.app.stage.addChild(rectangle);
 
     try {
-      this.texture = await PIXI.Assets.load('iso_blocks/bedrock_top.webp');//atlas.textures['tile_01.png'];
+      this.atlas = await PIXI.Assets.load('minecraftAtlas.json');
 
-      let sprite = PIXI.Sprite.from(this.texture);
-      // sprite.scale.set(2,2);
+      // this.app.stage.addChild(sprite);
 
-      // this.tilemap = new Tilemap([this.texture]);
-      // this.app.stage.addChild(this.tilemap);
+      console.log(this.atlas);
+      console.log(this.atlas.textureSource);
 
-      // this.tilemap.tile(this.texture, 100, 0);
-      // this.tilemap.tile(this.texture, 200, 0);
-      // this.tilemap.tile(this.texture, 300, 0);   
+      // Ne pas passer toutes les textures, Tilemap les charge automatiquement depuis l'atlas
+      this.tilemap = new Tilemap([this.atlas.textureSource]);
+      this.app.stage.addChild(this.tilemap);
 
-      sprite.position.set(
-        6,
-        0
-      );
+      //console.log(this.atlas.textures['bedrock_top.webp']);
 
-      // Ajouter le sprite à la scène
-      this.app.stage.addChild(sprite);
+      this.tilemap.tile(this.atlas.textures['bedrock_top.webp'], 200, 200);
+      this.tilemap.tile(this.atlas.textures['bedrock_left.webp'], 200, 208);
+      this.tilemap.tile(this.createTextureS(this.atlas.textures['bedrock_left.webp']), 216, 208);
+
+
+      // let decalex = 10;
+      // let decaley = 10;
+      // let x = 0;
+      // let y = 0;
+      // for (let i = 0; i < decalex; i++) {
+      //   for (let j = 0; j < decaley; j++) {
+      //     x = (i - j) * 32/2 + decalex*32;
+      //     y = (i + j) * 16/2 + decaley*16;
+      //     this.tilemap.tile(this.createTextureS(this.texture[0]), x, y);
+
+      //   }
+      // }
+      // this.tilemap.tile(this.texture, 100, 100);
+      // this.tilemap.tile(this.texture, 200, 200);
+      // this.tilemap.tile(this.texture, 300, 300);   
 
       console.log('Sprite chargé avec succès');
     } catch (error) {
       console.error('Erreur lors du chargement du sprite:', error);
     }
-
-
-    // Start adding content to your application
-    // const texture = await Assets.load('your-image.png');
-    // const sprite = new Sprite(texture);
-    // app.stage.addChild(sprite);
   }
 
   private async initPixiScene() {
@@ -97,6 +106,30 @@ export class VisualizerPage  { //implements AfterViewInit
 
     // Ajouter un gestionnaire de redimensionnement
     window.addEventListener('resize', () => this.onWindowResize());
+  }
+
+  private createTextureS(tex: PIXI.Texture): PIXI.Texture {
+    // sprite préparé (tint, scale…)
+    const sprite = new PIXI.Sprite(tex);
+    sprite.tint = 0x7F7F7F;
+    sprite.scale.x = -1;
+    sprite.anchor.set(0.5);
+    sprite.position.set(tex.width / 2, tex.height / 2); // Important pour anchor
+
+    // créer une render texture
+    const rt = PIXI.RenderTexture.create({
+        width: tex.width,
+        height: tex.height
+    });
+
+    // dessiner le sprite DANS la RenderTexture
+    this.app.renderer.render({
+      container: sprite,
+      target: rt
+    });
+
+    // utiliser rt comme texture finale
+    return rt;
   }
 
   private onWindowResize() {
