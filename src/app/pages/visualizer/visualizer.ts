@@ -50,7 +50,7 @@ export class VisualizerPage  { //implements AfterViewInit
     this.app.stage.addChild(rectangle);
 
     try {
-      this.atlas = await PIXI.Assets.load('minecraftAtlas.json');
+      this.atlas = await PIXI.Assets.load('sprite_pretty.json');
 
       // this.app.stage.addChild(sprite);
 
@@ -63,9 +63,9 @@ export class VisualizerPage  { //implements AfterViewInit
 
       //console.log(this.atlas.textures['bedrock_top.webp']);
 
-      this.tilemap.tile(this.atlas.textures['bedrock_top.webp'], 200, 200);
-      this.tilemap.tile(this.atlas.textures['bedrock_left.webp'], 200, 208);
-      this.tilemap.tile(this.createTextureS(this.atlas.textures['bedrock_left.webp']), 216, 208);
+      this.tilemap.tile(this.atlas.textures['bedrock.webp'], 200, 200);
+      //this.tilemap.tile(this.atlas.textures['sprite1158'], 200, 208);
+      //this.tilemap.tile(this.createTextureS(this.atlas.textures['bedrock_left.webp']), 216, 208);
 
 
       // let decalex = 10;
