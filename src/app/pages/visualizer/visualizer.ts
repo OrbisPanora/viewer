@@ -2,9 +2,10 @@ import { Component, ElementRef, ViewChild, PLATFORM_ID, inject  } from '@angular
 import { Router } from '@angular/router';
 import { isPlatformBrowser } from '@angular/common';
 import { DataService } from '../../services/data.service';
-import { SurfaceFactory } from '../../factories/surface.factory';
 import * as PIXI from 'pixi.js';
 import { Tilemap } from '@pixi/tilemap';
+import { Atlas } from '../../services/atlas';
+import { Chunk } from '../../factories/chunk';
 
 
 //import JSONK from '../../../../public/test5.json';
@@ -20,9 +21,8 @@ export class VisualizerPage  { //implements AfterViewInit
 
   private platformId = inject(PLATFORM_ID);
   public app!: PIXI.Application;
-  public surfaceFactory!: SurfaceFactory;
-  public tilemap!: Tilemap;
-  public atlas!: any;
+  public atlasLoader = new Atlas();
+  public chunk!: Chunk;
 
   @ViewChild('canvasContainer', {static: true}) canvasContainer!: ElementRef;
 
@@ -36,38 +36,31 @@ export class VisualizerPage  { //implements AfterViewInit
     if (!isPlatformBrowser(this.platformId)) {
       return; // Skip on server-side rendering
     }
-
     await this.initPixiScene();
 
     try {
-      this.atlas = await PIXI.Assets.load('iso_cube.json');
+      const start = performance.now();
 
-      // Ne pas passer toutes les textures, Tilemap les charge automatiquement depuis l'atlas
-      this.tilemap = new Tilemap([this.atlas.textureSource]);
-      this.app.stage.addChild(this.tilemap);
+      await this.atlasLoader.load('iso_cube.json');
+      let atlas = this.atlasLoader.getAtlas();
 
-      let decalex = 16;
-      let decaley = 16;
-      let decalez = 16;
-      let x = 0;
-      let y = 0;
-      let tileW = 32;
-      let tileH = 16;
-      // 32x16
-      const offsetX = window.innerWidth / 2 - (decalex - decaley) * (tileW / 4);
-      const offsetY = window.innerHeight / 2 - (decalex + decaley) * (tileH / 4) - decalez * (tileH / 2);
-      for (let k = decalez; k > 0; k--) {
-        for (let i = 0; i < decalex; i++) {
-          for (let j = 0; j < decaley; j++) {
-            x = offsetX + (i - j) * tileW/2; //window.innerWidth/2 500
-            y = offsetY + (i + j) * tileH/2 + k*tileH; //window.innerHeight
-            this.tilemap.tile(this.atlas.textures['gold_ore.webp'], x, y);
-          }
-        }
-      }  
+      this.chunk = new Chunk(1, atlas);
+      this.app.stage.addChild(this.chunk.getTilemap());
+      this.chunk.setXY(400, 100);
+      this.chunk.printInfo();
+      this.app.stage.addChild(this.chunk.backGroundColor(0xFF0000));
 
-      //this.tilemap.tile(this.atlas.textures['iron_ore.webp'], 0, 0);
 
+      // trouver la logique pour charger les chunks dynamiquement (avec coordoonennées generales)
+      // this.chunk = new Chunk(1, atlas);
+      // this.app.stage.addChild(this.chunk.getTilemap());
+      // //x=400, y=100, i=1, j=0.5, w=32, h=16  x(i*w/2 j*h/2)+y(-i*w/2 j*h/2)=x*i*w/2+y*-i*w/2 + x*j*h/2+y*j*h/2=(x-y)*i*w/2 +(x+y)*j*h/2
+      // this.chunk.setXY(656, 228);
+      // this.chunk.printInfo();
+      // this.app.stage.addChild(this.chunk.backGroundColor(0x00FF00));
+
+      const end = performance.now();
+      console.log("Durée :", (end - start)/1000, "s");
       console.log('Sprite chargé avec succès');
     } catch (error) {
       console.error('Erreur lors du chargement du sprite:', error);
