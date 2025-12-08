@@ -3,9 +3,9 @@ import { Router } from '@angular/router';
 import { isPlatformBrowser } from '@angular/common';
 import { DataService } from '../../services/data.service';
 import * as PIXI from 'pixi.js';
-import { Tilemap } from '@pixi/tilemap';
 import { Atlas } from '../../services/atlas';
 import { Chunk } from '../../factories/chunk';
+import { firstValueFrom } from 'rxjs';
 
 
 //import JSONK from '../../../../public/test5.json';
@@ -39,16 +39,26 @@ export class VisualizerPage  { //implements AfterViewInit
     await this.initPixiScene();
 
     try {
-      const start = performance.now();
+      let start = performance.now();
+      let data = await firstValueFrom(this.dataService.getJSONData("", -6, 3));
+      let coords = data.data.surface_blocks as (string | number)[][];
+      let end = performance.now();
+      console.log("Durée chargement API :", (end - start)/1000, "s");
 
+      start = performance.now();
       await this.atlasLoader.load('iso_cube.json');
       let atlas = this.atlasLoader.getAtlas();
 
-      this.chunk = new Chunk(1, atlas);
+      this.chunk = new Chunk(5, atlas, coords);
       this.app.stage.addChild(this.chunk.getTilemap());
-      this.chunk.setXY(400, 100);
+      this.chunk.setXY(700, 100);
       this.chunk.printInfo();
-      this.app.stage.addChild(this.chunk.backGroundColor(0xFF0000));
+      let zoom = 1;
+      this.chunk.zoom(zoom);
+      this.app.stage.addChild(this.chunk.backGroundColor(0xFF0000, zoom));
+      // const backGround = this.chunk.backGroundColor(0xFF0000);
+      // backGround.scale.set(2);
+      // this.app.stage.addChild(backGround);
 
 
       // trouver la logique pour charger les chunks dynamiquement (avec coordoonennées generales)
@@ -59,8 +69,8 @@ export class VisualizerPage  { //implements AfterViewInit
       // this.chunk.printInfo();
       // this.app.stage.addChild(this.chunk.backGroundColor(0x00FF00));
 
-      const end = performance.now();
-      console.log("Durée :", (end - start)/1000, "s");
+      end = performance.now();
+      console.log("Durée affichage :", (end - start)/1000, "s");
       console.log('Sprite chargé avec succès');
     } catch (error) {
       console.error('Erreur lors du chargement du sprite:', error);
