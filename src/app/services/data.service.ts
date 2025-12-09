@@ -37,5 +37,9 @@ export class DataService {
     return this.http.post<ApiResponse<any>>("http://localhost:8000/api/resources/palette", dict);
   }
 
+  uploadWorld(formData: FormData): Observable<any> {
+    return this.http.post(`${this.path}upload/world`, formData);
+  }
+
 
 }
