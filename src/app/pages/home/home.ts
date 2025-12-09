@@ -1,6 +1,7 @@
 import { Component } from '@angular/core';
 import { Router } from '@angular/router';
 import { CommonModule } from '@angular/common';
+import { HttpClient, HttpHeaders } from '@angular/common/http';
 
 @Component({
   selector: 'app-home',
@@ -10,8 +11,9 @@ import { CommonModule } from '@angular/common';
 })
 export class HomePage {
   isDragOver = false;
+  isUploading = false;
 
-  constructor(private router: Router) {}
+  constructor(private router: Router, private http: HttpClient) {}
 
   onDragOver(event: DragEvent): void {
     event.preventDefault();
@@ -43,14 +45,41 @@ export class HomePage {
     }
   }
 
-  private handleFile(file: File): void {
+  private async handleFile(file: File): Promise<void> {
     const fileName = file.name.toLowerCase();
-    const isValidFile = fileName.endsWith('.zip') || fileName.endsWith('.mca');
+    const isValidFile = fileName.endsWith('.zip');
 
-    if (isValidFile) {
+    if (!isValidFile) {
+      alert('Please upload a valid .zip file containing a complete Minecraft world');
+      return;
+    }
+
+    this.isUploading = true;
+
+    try {
+      // Create FormData for file upload
+      const formData = new FormData();
+      formData.append('file', file);
+      formData.append('dimension', 'overworld'); // Default to overworld
+
+      console.log('Uploading world file:', file.name);
+
+      // Upload to API
+      const response = await this.http.post(
+        'http://localhost:8000/api/upload/world',
+        formData
+      ).toPromise();
+
+      console.log('World uploaded successfully:', response);
+
+      // Navigate to visualizer after successful upload
       this.router.navigate(['/visualizer']);
-    } else {
-      alert('Please upload a valid .zip or .mca file');
+
+    } catch (error) {
+      console.error('Failed to upload world:', error);
+      alert('Failed to upload world. Please check the console for details.');
+    } finally {
+      this.isUploading = false;
     }
   }
 }

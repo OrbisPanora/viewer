@@ -7,6 +7,7 @@ import { Atlas } from '../../services/atlas';
 import { Chunk } from '../../factories/chunk';
 import { firstValueFrom, Observable, BehaviorSubject } from 'rxjs';
 import { MouseEvents } from '../../events/mouse';
+import { ChunkManager } from '../../services/chunk-manager.service';
 
 
 //import JSONK from '../../../../public/test5.json';
@@ -16,7 +17,7 @@ import { MouseEvents } from '../../events/mouse';
   imports: [],
   templateUrl: './visualizer.html',
   styleUrl: './visualizer.less',
-  providers: [DataService]
+  providers: [DataService, ChunkManager]
 })
 export class VisualizerPage  { //implements AfterViewInit
 
@@ -28,156 +29,105 @@ export class VisualizerPage  { //implements AfterViewInit
   public mouseX : BehaviorSubject<number> = new BehaviorSubject<number>(0);
   public mouseY : BehaviorSubject<number> = new BehaviorSubject<number>(0);
 
-  //public dragging: boolean=false;
+  // New chunk management system
+  private chunkManager!: ChunkManager;
+  private worldContainer!: PIXI.Container;
+  private isDragging = false;
+  private lastMouseX = 0;
+  private lastMouseY = 0;
+  private renderLoopId: number | null = null;
 
   @ViewChild('canvasContainer', {static: true}) canvasContainer!: ElementRef;
 
-  constructor(private router: Router, private dataService: DataService) {}
+  constructor(private router: Router, private dataService: DataService, private chunkManagerService: ChunkManager) {}
 
   goBack(): void {
     this.router.navigate(['/']);
+  }
+
+  /**
+   * Check if the world is loaded by polling the health endpoint
+   */
+  private async waitForWorldLoaded(): Promise<void> {
+    return new Promise((resolve) => {
+      const checkWorldLoaded = async () => {
+        try {
+          const response = await fetch('http://localhost:8000/api/worlds/health');
+          if (response.ok) {
+            const data = await response.json();
+            if (data.world_loaded) {
+              console.log('World is loaded, proceeding with initialization');
+              resolve();
+              return;
+            }
+          }
+          console.log('World not loaded yet, waiting...');
+        } catch (error) {
+          console.warn('Failed to check world status:', error);
+        }
+
+        // Check again in 2 seconds
+        setTimeout(checkWorldLoaded, 2000);
+      };
+
+      checkWorldLoaded();
+    });
   }
 
   async ngOnInit() {
     if (!isPlatformBrowser(this.platformId)) {
       return; // Skip on server-side rendering
     }
+
+    // Initialize ChunkManager
+    this.chunkManager = this.chunkManagerService;
+    this.chunkManager.setViewportSize(window.innerWidth, window.innerHeight);
+
     await this.initPixiScene();
 
+    // Wait for world to be loaded before proceeding
+    await this.waitForWorldLoaded();
+
     try {
-      let x = 0;
-      let y = 0;
+      console.log('Initializing world viewer...');
 
-      // this.mouseEvent();
-      // console.log(this.mouseX, this.mouseY);
+      // Create world container for all chunks
+      this.worldContainer = new PIXI.Container({isRenderGroup: true});
+      this.worldContainer.x = 0;
+      this.worldContainer.y = 0;
+      this.app.stage.addChild(this.worldContainer);
 
-      
-
-      // this.app.canvas.addEventListener('mousemove', (e) => {
-      //   x = e.clientX;
-      //   y = e.clientY;
-      // });
-
-      // this.app.ticker.add(() => {
-      //   // const screenWidth = this.app.renderer.width;
-      //   // const screenHeight = this.app.renderer.height;
-
-      //   // const targetX = (x / screenWidth) * (worldSize - screenWidth);
-      //   // const targetY = (y / screenHeight) * (worldSize - screenHeight);
-
-      //   // worldContainer.x += (-targetX - worldContainer.x) * 0.1;
-      //   // worldContainer.y += (-targetY - worldContainer.y) * 0.1;
-      // });
-
-      console.log('mouse position:', x, y);
-
-      let cont = new PIXI.Container({isRenderGroup: true});
-      cont.x = 0;
-      cont.y = 0;
-      this.app.stage.addChild(cont);
-
-      console.log(cont.width, cont.height);
-
-      // let gg = new PIXI.Graphics().rect(20, 5, this.app.canvas.width, this.app.canvas.width).fill(0xffff00);
-      // cont.addChild(gg);
-      
-
-      
-      
-
-
-      ///////////
-
-      let start = performance.now();
-      let data = await firstValueFrom(this.dataService.getJSONData("", -6, 3));
-      let coords = data.data.surface_blocks as (string | number)[][];
-      let end = performance.now();
-      console.log("Durée chargement API :", (end - start)/1000, "s");
-
-      start = performance.now();
+      // Load atlas
+      const start = performance.now();
       await this.atlasLoader.load('iso_cube.json');
-      let atlas = this.atlasLoader.getAtlas();
+      const atlas = this.atlasLoader.getAtlas();
+      const end = performance.now();
+      console.log("Atlas loading duration:", (end - start)/1000, "s");
 
-      this.chunk = new Chunk(22, atlas, coords);
-      this.chunk.setXY(700, 100);
-      //this.app.stage.addChild(this.chunk.getTilemap());
-      cont.addChild(this.chunk.getTilemap());
-      
-      this.chunk.printInfo();
-      let zoom = 1;
-      this.chunk.zoom(zoom);
-      //this.app.stage.addChild(this.chunk.backGroundColor(0xFF0000, zoom));
-      console.log(cont.x, cont.y, cont.width, cont.height);
+      if (!atlas) {
+        throw new Error('Failed to load atlas');
+      }
 
-      
-      let gg = new PIXI.Graphics().rect(20, 5, cont.width, cont.height).fill(0xffff00);
-      cont.addChild(gg);
+      // Initial camera position at world center (0,0)
+      this.chunkManager.setCameraPosition(0, 0);
+      this.chunkManager.setZoom(1.0);
 
-      console.log(cont.x, cont.y, cont.width, cont.height);
-      
-      console.log(gg.width, gg.height);
+      // Load initial visible chunks
+      await this.chunkManager.ensureVisibleChunksLoaded(this.atlasLoader);
 
-      ////////////
-      this.app.stage.eventMode = 'static';
+      // Start preloading in background
+      this.chunkManager.startPreloading(this.atlasLoader);
 
-      this.app.stage.on('pointerdown', (e) => {
-          console.log("Pointer down :", e.global.x, e.global.y);
+      // Setup input handling
+      this.setupInputHandling();
 
-          // Activer le drag
-          this.dragging = true;
-      });
+      // Start render loop
+      this.startRenderLoop();
 
-      this.app.stage.on('pointermove', (e) => {
-          if (!this.dragging) return;
+      console.log('World viewer initialized successfully');
 
-          
-          console.log("Pointer move :", e.global.x, e.global.y);
-      });
-
-      this.app.stage.on('pointerup', () => {
-          console.log("Pointer up");
-          this.dragging = false;
-      });
-      
-      ///////////
-
-
-
-      
-
-
-      // const backGround = this.chunk.backGroundColor(0xFF0000);
-      // backGround.scale.set(2);
-      // this.app.stage.addChild(backGround);
-
-
-      // // trouver la logique pour charger les chunks dynamiquement (avec coordoonennées generales)
-      // data = await firstValueFrom(this.dataService.getJSONData("", -5, 3));
-      // coords = data.data.surface_blocks as (string | number)[][];
-      // this.chunk = new Chunk(1, atlas, coords);
-      // this.app.stage.addChild(this.chunk.getTilemap());
-      // // //x=400, y=100, i=1, j=0.5, w=32, h=16  x(i*w/2 j*h/2)+y(-i*w/2 j*h/2)=x*i*w/2+y*-i*w/2 + x*j*h/2+y*j*h/2=(x-y)*i*w/2 +(x+y)*j*h/2
-      // this.chunk.setXY(700+zoom*256, 100+zoom*128);
-      // this.chunk.printInfo();
-      // this.chunk.zoom(zoom);
-      // this.app.stage.addChild(this.chunk.backGroundColor(0x00FF00, zoom));
-
-      // data = await firstValueFrom(this.dataService.getJSONData("", -6, 4));
-      // coords = data.data.surface_blocks as (string | number)[][];
-      // this.chunk = new Chunk(1, atlas, coords);
-      // this.app.stage.addChild(this.chunk.getTilemap());
-      // // //x=400, y=100, i=1, j=0.5, w=32, h=16  x(i*w/2 j*h/2)+y(-i*w/2 j*h/2)=x*i*w/2+y*-i*w/2 + x*j*h/2+y*j*h/2=(x-y)*i*w/2 +(x+y)*j*h/2
-      // this.chunk.setXY(700-zoom*256, 100+zoom*128);
-      // this.chunk.printInfo();
-      // this.chunk.zoom(zoom);
-      // this.app.stage.addChild(this.chunk.backGroundColor(0x0000FF, zoom));
-
-
-      //end = performance.now();
-      //console.log("Durée affichage :", (end - start)/1000, "s");
-      console.log('Sprite chargé avec succès');
     } catch (error) {
-      console.error('Erreur lors du chargement du sprite:', error);
+      console.error('Failed to initialize world viewer:', error);
     }
   }
 
@@ -189,52 +139,202 @@ export class VisualizerPage  { //implements AfterViewInit
       backgroundColor: 0x77b5fe,
       antialias: true,     // Enable antialiasing
       resolution: 1,       // Resolution / device pixel ratio
-      preference: 'webgl', // or 'webgpu' // Renderer preference
+      preference: 'webgl', // or 'webgl' // but as webgpu is now supported by chrome , lets use it cuz we get better performance as we use the gpu to render 
     });
 
     //document.body.appendChild(this.app.canvas);
     this.canvasContainer.nativeElement.appendChild(this.app.canvas);
 
-    // Ajouter un gestionnaire de redimensionnement
     window.addEventListener('resize', () => this.onWindowResize());
-  }
-
-  private mouseEvent(): void {
-    this.app.stage.eventMode = 'static';
-
-    this.app.stage.on('pointerdown', (e) => {
-        console.log("Pointer down :", e.global.x, e.global.y);
-        // Activer le drag
-        this.dragging = true;
-    });
-
-    this.app.stage.on('pointermove', (e) => {
-        if (!this.dragging) return;
-        this.mouseX.next(e.global.x);
-        this.mouseY.next(e.global.y);
-        //console.log("Pointer move :", e.global.x, e.global.y);
-    });
-
-    this.app.stage.on('pointerup', () => {
-        console.log("Pointer up");
-        this.dragging = false;
-    });
   }
 
   private onWindowResize() {
     if (!this.app) return;
 
     this.app.renderer.resize(window.innerWidth, window.innerHeight);
+    this.chunkManager.setViewportSize(window.innerWidth, window.innerHeight);
+  }
+
+  /**
+   * Setup mouse and keyboard input handling
+   */
+  private setupInputHandling(): void {
+    // Mouse wheel for zoom
+    this.app.canvas.addEventListener('wheel', (e) => {
+      e.preventDefault();
+      const zoomDelta = e.deltaY > 0 ? 0.9 : 1.1;
+      const newZoom = this.chunkManager.getZoom() * zoomDelta;
+      this.chunkManager.setZoom(newZoom);
+      console.log(`Zoom: ${newZoom.toFixed(2)}x`);
+    });
+
+    // Mouse events for dragging
+    this.app.stage.eventMode = 'static';
+    this.app.stage.on('pointerdown', (e) => {
+      this.isDragging = true;
+      this.lastMouseX = e.global.x;
+      this.lastMouseY = e.global.y;
+      this.app.canvas.style.cursor = 'grabbing';
+    });
+
+    this.app.stage.on('pointermove', (e) => {
+      if (!this.isDragging) return;
+
+      const deltaX = e.global.x - this.lastMouseX;
+      const deltaY = e.global.y - this.lastMouseY;
+
+      // Convert screen delta to world delta based on zoom
+      const zoom = this.chunkManager.getZoom();
+      const worldDeltaX = deltaX / zoom;
+      const worldDeltaY = deltaY / zoom;
+
+      this.chunkManager.moveCamera(-worldDeltaX, -worldDeltaY);
+
+      this.lastMouseX = e.global.x;
+      this.lastMouseY = e.global.y;
+    });
+
+    this.app.stage.on('pointerup', () => {
+      this.isDragging = false;
+      this.app.canvas.style.cursor = 'grab';
+    });
+
+    this.app.stage.on('pointerleave', () => {
+      this.isDragging = false;
+      this.app.canvas.style.cursor = 'default';
+    });
+
+    // Keyboard controls
+    window.addEventListener('keydown', (e) => {
+      const moveSpeed = 50 / this.chunkManager.getZoom();
+      switch (e.key) {
+        case 'ArrowUp':
+        case 'z':
+        case 'Z':
+          e.preventDefault();
+          this.chunkManager.moveCamera(0, -moveSpeed);
+          break;
+        case 'ArrowDown':
+        case 's':
+        case 'S':
+          e.preventDefault();
+          this.chunkManager.moveCamera(0, moveSpeed);
+          break;
+        case 'ArrowLeft':
+        case 'q':
+        case 'Q':
+          e.preventDefault();
+          this.chunkManager.moveCamera(-moveSpeed, 0);
+          break;
+        case 'ArrowRight':
+        case 'd':
+        case 'D':
+          e.preventDefault();
+          this.chunkManager.moveCamera(moveSpeed, 0);
+          break;
+        case '+':
+        case '=':
+          e.preventDefault();
+          this.chunkManager.setZoom(this.chunkManager.getZoom() * 1.2);
+          break;
+        case '-':
+          e.preventDefault();
+          this.chunkManager.setZoom(this.chunkManager.getZoom() * 0.8);
+          break;
+      }
+    });
+
+    // Set initial cursor
+    this.app.canvas.style.cursor = 'grab';
+  }
+
+  /**
+   * Start the render loop that updates visible chunks
+   */
+  private startRenderLoop(): void {
+    const render = () => {
+      // Update visible chunks based on camera position
+      this.updateVisibleChunks();
+
+      // Continue the loop
+      this.renderLoopId = requestAnimationFrame(render);
+    };
+
+    render();
+  }
+
+  /**
+   * Update which chunks are visible and ensure they're loaded
+   */
+  private async updateVisibleChunks(): Promise<void> {
+    try {
+      // Ensure visible chunks are loaded
+      await this.chunkManager.ensureVisibleChunksLoaded(this.atlasLoader);
+
+      // Update rendering
+      this.renderChunks();
+
+      // Start preloading if not already running
+      this.chunkManager.startPreloading(this.atlasLoader);
+
+    } catch (error) {
+      console.warn('Failed to update visible chunks:', error);
+    }
+  }
+
+  /**
+   * Render all visible chunks to the screen
+   */
+  private renderChunks(): void {
+    const visibleChunks = this.chunkManager.getVisibleChunks();
+
+    // Clear existing chunks from container
+    this.worldContainer.removeChildren();
+
+    // Add visible chunks to container
+    for (const chunkData of visibleChunks) {
+      if (chunkData.chunk) {
+        // Calculate chunk position in screen coordinates
+        const chunkWorldX = chunkData.coords.x * 16; // Chunk center in world coords
+        const chunkWorldZ = chunkData.coords.z * 16;
+
+        const screenPos = this.chunkManager.worldToScreen(chunkWorldX, chunkWorldZ);
+
+        // Position the chunk
+        chunkData.chunk.setXY(screenPos.screenX, screenPos.screenY);
+
+        // Apply zoom
+        const zoom = this.chunkManager.getZoom();
+        chunkData.chunk.zoom(zoom);
+
+        // Add to container
+        this.worldContainer.addChild(chunkData.chunk.getTilemap());
+      }
+    }
+
+    // Debug, dev only (/!\ please remove when deploying /!\)
+    const stats = this.chunkManager.getCacheStats();
+    const camera = this.chunkManager.getCameraPosition();
+    console.log(`Camera: (${camera.x.toFixed(1)}, ${camera.z.toFixed(1)}) | Chunks: ${stats.visible}/${stats.total}`);
   }
 
   ngOnDestroy() {
-    // a verifier
+    // Cancel render loop
+    if (this.renderLoopId !== null) {
+      cancelAnimationFrame(this.renderLoopId);
+    }
+
     if (!isPlatformBrowser(this.platformId)) {
       return;
     }
 
     if (this.app) {
       this.app.destroy(true);
+    }
+
+    // Clear chunk cache
+    if (this.chunkManager) {
+      this.chunkManager.clearCache();
     }
 
     window.removeEventListener('resize', () => this.onWindowResize());

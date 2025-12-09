@@ -52,6 +52,18 @@ export class Chunk {
         this.tilemap.scale.set(zoomCoef);
     }
 
+    public destroy(): void {
+        if (this.tilemap) {
+            this.tilemap.destroy({
+                children: true,
+                texture: false,
+                textureSource: false
+            });
+            this.tilemap = null!;
+        }
+    }
+
+    //what is this ? 
     private testisoallsame(z: number, atlas: Spritesheet): void {
         for (let i = 0; i < this.X; i++) {
             let x = 0;
