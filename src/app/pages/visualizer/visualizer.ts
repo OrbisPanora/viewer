@@ -36,6 +36,7 @@ export class VisualizerPage  { //implements AfterViewInit
   private lastMouseX = 0;
   private lastMouseY = 0;
   private renderLoopId: number | null = null;
+  private chunkUpdateScheduled = false;
 
   @ViewChild('canvasContainer', {static: true}) canvasContainer!: ElementRef;
 
@@ -108,8 +109,8 @@ export class VisualizerPage  { //implements AfterViewInit
         throw new Error('Failed to load atlas');
       }
 
-      // Initial camera position at world center (0,0)
-      this.chunkManager.setCameraPosition(0, 0);
+      // Initial camera position at the center of the first chunk (0,0)
+      this.chunkManager.setCameraPosition(8, 8);
       this.chunkManager.setZoom(1.0);
 
       // Load initial visible chunks
@@ -153,6 +154,8 @@ export class VisualizerPage  { //implements AfterViewInit
 
     this.app.renderer.resize(window.innerWidth, window.innerHeight);
     this.chunkManager.setViewportSize(window.innerWidth, window.innerHeight);
+
+    this.scheduleChunkUpdate();
   }
 
   /**
@@ -166,6 +169,8 @@ export class VisualizerPage  { //implements AfterViewInit
       const newZoom = this.chunkManager.getZoom() * zoomDelta;
       this.chunkManager.setZoom(newZoom);
       console.log(`Zoom: ${newZoom.toFixed(2)}x`);
+
+      this.scheduleChunkUpdate();
     });
 
     // Mouse events for dragging
@@ -183,12 +188,10 @@ export class VisualizerPage  { //implements AfterViewInit
       const deltaX = e.global.x - this.lastMouseX;
       const deltaY = e.global.y - this.lastMouseY;
 
-      // Convert screen delta to world delta based on zoom
-      const zoom = this.chunkManager.getZoom();
-      const worldDeltaX = deltaX / zoom;
-      const worldDeltaY = deltaY / zoom;
+      // Let ChunkManager convert screen-space drag into world-space camera movement
+      this.chunkManager.panCamera(deltaX, deltaY);
 
-      this.chunkManager.moveCamera(-worldDeltaX, -worldDeltaY);
+      this.scheduleChunkUpdate();
 
       this.lastMouseX = e.global.x;
       this.lastMouseY = e.global.y;
@@ -206,7 +209,7 @@ export class VisualizerPage  { //implements AfterViewInit
 
     // Keyboard controls
     window.addEventListener('keydown', (e) => {
-      const moveSpeed = 50 / this.chunkManager.getZoom();
+      const moveSpeed = 16 / this.chunkManager.getZoom();
       switch (e.key) {
         case 'ArrowUp':
         case 'z':
@@ -242,6 +245,8 @@ export class VisualizerPage  { //implements AfterViewInit
           this.chunkManager.setZoom(this.chunkManager.getZoom() * 0.8);
           break;
       }
+
+      this.scheduleChunkUpdate();
     });
 
     // Set initial cursor
@@ -253,14 +258,26 @@ export class VisualizerPage  { //implements AfterViewInit
    */
   private startRenderLoop(): void {
     const render = () => {
-      // Update visible chunks based on camera position
-      this.updateVisibleChunks();
+      // Only render already loaded chunks; loading is scheduled separately
+      this.renderChunks();
 
       // Continue the loop
       this.renderLoopId = requestAnimationFrame(render);
     };
 
     render();
+  }
+
+  private scheduleChunkUpdate(): void {
+    if (this.chunkUpdateScheduled) {
+      return;
+    }
+
+    this.chunkUpdateScheduled = true;
+    requestAnimationFrame(() => {
+      this.chunkUpdateScheduled = false;
+      this.updateVisibleChunks();
+    });
   }
 
   /**
@@ -295,17 +312,13 @@ export class VisualizerPage  { //implements AfterViewInit
     for (const chunkData of visibleChunks) {
       if (chunkData.chunk) {
         // Calculate chunk position in screen coordinates
-        const chunkWorldX = chunkData.coords.x * 16; // Chunk center in world coords
-        const chunkWorldZ = chunkData.coords.z * 16;
+        const chunkWorldX = (chunkData.coords.x + 0.5) * 16; // Chunk center in world coords
+        const chunkWorldZ = (chunkData.coords.z + 0.5) * 16;
 
         const screenPos = this.chunkManager.worldToScreen(chunkWorldX, chunkWorldZ);
 
         // Position the chunk
         chunkData.chunk.setXY(screenPos.screenX, screenPos.screenY);
-
-        // Apply zoom
-        const zoom = this.chunkManager.getZoom();
-        chunkData.chunk.zoom(zoom);
 
         // Add to container
         this.worldContainer.addChild(chunkData.chunk.getTilemap());

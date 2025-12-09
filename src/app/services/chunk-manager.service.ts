@@ -34,6 +34,13 @@ export class ChunkManager {
   private visibleChunks = new Set<string>();
   private isPreloading = false;
 
+  private readonly TILE_WIDTH = 32;
+  private readonly TILE_HEIGHT = 16;
+  private readonly CHUNK_SIZE = 16;
+
+  private missingChunks = new Set<string>();
+  private loadingChunks = new Map<string, Promise<ChunkData | null>>();
+
   // Viewport and camera settings
   private cameraX = 0;
   private cameraZ = 0;
@@ -51,18 +58,17 @@ export class ChunkManager {
     // Assuming isometric projection: x_iso = 16 * (x - z), y_iso = 8 * (x + z) - 16 * y
     // For 2D view, we ignore the height component
 
-    const isoX = (screenX - this.viewportWidth / 2) / this.zoom + this.cameraX;
-    const isoY = (screenY - this.viewportHeight / 2) / this.zoom + this.cameraZ;
+    const isoX = (screenX - this.viewportWidth / 2) / this.zoom;
+    const isoY = (screenY - this.viewportHeight / 2) / this.zoom;
 
-    // Convert back from isometric to world coordinates
-    // iso_x = 16 * (world_x - world_z)
-    // iso_y = 8 * (world_x + world_z)
-    // Solving this system gives us:
-    // world_x = (iso_x / 16 + iso_y / 8) / 2
-    // world_z = (iso_y / 8 - iso_x / 16) / 2
+    // Convert back from isometric to world coordinates in camera-relative space
+    // iso_x = (TILE_WIDTH/2) * (world_x - world_z)
+    // iso_y = (TILE_HEIGHT/2) * (world_x + world_z)
+    const relWorldX = (isoX / (this.TILE_WIDTH / 2) + isoY / (this.TILE_HEIGHT / 2)) / 2;
+    const relWorldZ = (isoY / (this.TILE_HEIGHT / 2) - isoX / (this.TILE_WIDTH / 2)) / 2;
 
-    const worldX = (isoX / 16 + isoY / 8) / 2;
-    const worldZ = (isoY / 8 - isoX / 16) / 2;
+    const worldX = this.cameraX + relWorldX;
+    const worldZ = this.cameraZ + relWorldZ;
 
     return { worldX, worldZ };
   }
@@ -72,8 +78,11 @@ export class ChunkManager {
    */
   worldToScreen(worldX: number, worldZ: number): { screenX: number, screenY: number } {
     // Isometric projection
-    const isoX = 16 * (worldX - worldZ) * this.zoom - this.cameraX + this.viewportWidth / 2;
-    const isoY = 8 * (worldX + worldZ) * this.zoom - this.cameraZ + this.viewportHeight / 2;
+    const dx = worldX - this.cameraX;
+    const dz = worldZ - this.cameraZ;
+
+    const isoX = (dx - dz) * (this.TILE_WIDTH / 2) * this.zoom + this.viewportWidth / 2;
+    const isoY = (dx + dz) * (this.TILE_HEIGHT / 2) * this.zoom + this.viewportHeight / 2;
 
     return { screenX: isoX, screenY: isoY };
   }
@@ -83,8 +92,8 @@ export class ChunkManager {
    */
   worldToChunk(worldX: number, worldZ: number): ChunkCoords {
     return {
-      x: Math.floor(worldX / 16),
-      z: Math.floor(worldZ / 16)
+      x: Math.floor(worldX / this.CHUNK_SIZE),
+      z: Math.floor(worldZ / this.CHUNK_SIZE)
     };
   }
 
@@ -110,10 +119,13 @@ export class ChunkManager {
     const bounds = this.getViewportBounds();
     const chunks: ChunkCoords[] = [];
 
-    const minChunkX = Math.floor(bounds.minX / 16) - 1; // Add padding
-    const maxChunkX = Math.floor(bounds.maxX / 16) + 1;
-    const minChunkZ = Math.floor(bounds.minZ / 16) - 1;
-    const maxChunkZ = Math.floor(bounds.maxZ / 16) + 1;
+    // Padding depends on zoom: more padding when zoomed in, less when zoomed out
+    const padding = Math.max(1, Math.round(2 / this.zoom));
+
+    const minChunkX = Math.floor(bounds.minX / this.CHUNK_SIZE) - padding; // Add padding
+    const maxChunkX = Math.floor(bounds.maxX / this.CHUNK_SIZE) + padding;
+    const minChunkZ = Math.floor(bounds.minZ / this.CHUNK_SIZE) - padding;
+    const maxChunkZ = Math.floor(bounds.maxZ / this.CHUNK_SIZE) + padding;
 
     for (let x = minChunkX; x <= maxChunkX; x++) {
       for (let z = minChunkZ; z <= maxChunkZ; z++) {
@@ -135,34 +147,53 @@ export class ChunkManager {
    * Load a single chunk
    */
   private async loadChunk(coords: ChunkCoords): Promise<ChunkData | null> {
-    try {
-      const data = await firstValueFrom(this.dataService.getJSONData("", coords.x, coords.z));
+    const key = this.getChunkKey(coords);
 
-      if (!data?.data?.surface_blocks?.length) {
-        console.warn(`Chunk (${coords.x}, ${coords.z}) has no valid data`);
-        return null;
-      }
-
-      const chunkData: ChunkData = {
-        coords,
-        data: data.data.surface_blocks as (string | number)[][],
-        chunk: null, // Will be created when needed
-        lastAccessed: Date.now(),
-        isVisible: true
-      };
-
-      // Cache the chunk data
-      const key = this.getChunkKey(coords);
-      this.cachedChunks.set(key, chunkData);
-
-      console.log(`Loaded chunk: (${coords.x}, ${coords.z})`);
-      return chunkData;
-
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      console.warn(`Failed to load chunk (${coords.x}, ${coords.z}): ${errorMessage}`);
+    if (this.missingChunks.has(key)) {
       return null;
     }
+
+    const existingPromise = this.loadingChunks.get(key);
+    if (existingPromise) {
+      return existingPromise;
+    }
+
+    const loadPromise = (async () => {
+      try {
+        const data = await firstValueFrom(this.dataService.getJSONData("", coords.x, coords.z));
+
+        if (!data?.data?.surface_blocks?.length) {
+          console.warn(`Chunk (${coords.x}, ${coords.z}) has no valid data`);
+          this.missingChunks.add(key);
+          return null;
+        }
+
+        const chunkData: ChunkData = {
+          coords,
+          data: data.data.surface_blocks as (string | number)[][],
+          chunk: null, // Will be created when needed
+          lastAccessed: Date.now(),
+          isVisible: true
+        };
+
+        this.cachedChunks.set(key, chunkData);
+        this.missingChunks.delete(key);
+
+        console.log(`Loaded chunk: (${coords.x}, ${coords.z})`);
+        return chunkData;
+
+      } catch (error) {
+        const errorMessage = error instanceof Error ? error.message : String(error);
+        console.warn(`Failed to load chunk (${coords.x}, ${coords.z}): ${errorMessage}`);
+        this.missingChunks.add(key);
+        return null;
+      } finally {
+        this.loadingChunks.delete(key);
+      }
+    })();
+
+    this.loadingChunks.set(key, loadPromise);
+    return loadPromise;
   }
 
   /**
@@ -264,9 +295,14 @@ export class ChunkManager {
       const currentChunk = this.worldToChunk(this.cameraX, this.cameraZ);
       const preloadPromises: Promise<void>[] = [];
 
+      // Adjust preload radius dynamically based on zoom to balance performance and smoothness
+      const zoom = this.zoom;
+      const zoomFactor = Math.max(0.5, Math.min(2.0, zoom));
+      const effectiveRadius = Math.max(1, Math.round(this.preloadRadius * zoomFactor));
+
       // Preload chunks in a larger radius
-      for (let dx = -this.preloadRadius; dx <= this.preloadRadius; dx++) {
-        for (let dz = -this.preloadRadius; dz <= this.preloadRadius; dz++) {
+      for (let dx = -effectiveRadius; dx <= effectiveRadius; dx++) {
+        for (let dz = -effectiveRadius; dz <= effectiveRadius; dz++) {
           const coords = { x: currentChunk.x + dx, z: currentChunk.z + dz };
           const key = this.getChunkKey(coords);
 
@@ -303,10 +339,11 @@ export class ChunkManager {
     return Array.from(this.cachedChunks.values())
       .filter(chunkData => chunkData.isVisible && chunkData.chunk)
       .sort((a, b) => {
-        // Sort by distance from camera for proper rendering order
-        const distA = Math.abs(a.coords.x - this.cameraX/16) + Math.abs(a.coords.z - this.cameraZ/16);
-        const distB = Math.abs(b.coords.x - this.cameraX/16) + Math.abs(b.coords.z - this.cameraZ/16);
-        return distA - distB;
+        // Sort by isometric depth so that farther chunks are drawn first
+        // For a fixed isometric camera, depth can be approximated by (x + z)
+        const depthA = a.coords.x + a.coords.z;
+        const depthB = b.coords.x + b.coords.z;
+        return depthA - depthB;
       });
   }
 
@@ -323,7 +360,7 @@ export class ChunkManager {
    * Update zoom level
    */
   setZoom(zoom: number): void {
-    this.zoom = Math.max(0.1, Math.min(5.0, zoom)); // Clamp zoom between 0.1 and 5.0
+    this.zoom = Math.max(0.5, Math.min(2.5, zoom)); // Clamp zoom between 0.5 and 2.5
     this.updateVisibleChunks();
   }
 
@@ -341,6 +378,23 @@ export class ChunkManager {
    */
   moveCamera(deltaX: number, deltaZ: number): void {
     this.setCameraPosition(this.cameraX + deltaX, this.cameraZ + deltaZ);
+  }
+
+  /**
+   * Pan camera using screen-space deltas
+   */
+  panCamera(deltaScreenX: number, deltaScreenY: number): void {
+    const zoom = this.zoom;
+    const sx = (this.TILE_WIDTH / 2) * zoom;
+    const sy = (this.TILE_HEIGHT / 2) * zoom;
+
+    const relX = deltaScreenX / sx;
+    const relY = deltaScreenY / sy;
+
+    const worldDX = (relX + relY) / 2;
+    const worldDZ = (relY - relX) / 2;
+
+    this.moveCamera(-worldDX, -worldDZ);
   }
 
   /**
