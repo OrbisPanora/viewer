@@ -36,8 +36,7 @@
             }
           },
           "configurations": {
-            "production": {            npm run serve:ssr:web
-              "baseHref": "/kubernetes/iut-inf63-projets-etudiants-orbispanora/orbispanora-web/",
+            "production": {            
               "budgets": [
                 {
                   "type": "initial",

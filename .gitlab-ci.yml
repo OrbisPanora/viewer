@@ -29,7 +29,7 @@ sonarqube-check:
   only:
     - main
     - dev
-    - cicd/pipeline
+    - refactor/web
 
 build-web-image:
   extends: .build-and-push-docker-image
@@ -41,7 +41,7 @@ build-web-image:
     DESTINATION_REGISTRY_IMAGE_VERSION: "latest"
   only:
     - main
-    - cicd/pipeline
+    - refactor/web
   when: on_success
 
 push-web-image:
@@ -56,7 +56,7 @@ push-web-image:
     - build-web-image
   only:
     - main
-    - cicd/pipeline
+    - refactor/web
   when: on_success
 
 deploy-web:
@@ -72,5 +72,5 @@ deploy-web:
         CONTAINER_HTTP_PORT: 4000
     only:
       - main
-      - cicd/pipeline
+      - refactor/web
     when: on_success
