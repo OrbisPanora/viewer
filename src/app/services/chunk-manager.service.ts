@@ -4,131 +4,194 @@ import { Atlas } from './atlas';
 import { Chunk } from '../factories/chunk';
 import { firstValueFrom } from 'rxjs';
 
+// ============================================================================
+// TYPES & INTERFACES
+// ============================================================================
+
 export interface ChunkCoords {
   x: number;
   z: number;
 }
 
-export interface ViewportBounds {
-  minX: number;
-  maxX: number;
-  minZ: number;
-  maxZ: number;
-}
-
 export interface ChunkData {
   coords: ChunkCoords;
-  data: (string | number)[][];
-  chunk: Chunk | null;
-  lastAccessed: number;
-  isVisible: boolean;
+  tileData: (string | number)[][];  // [textureName, screenX, screenY][]
+  chunk: Chunk | null;              // PIXI tilemap instance
+  lastAccessed: number;             // For LRU cache
+  state: 'loading' | 'loaded' | 'error';
 }
+
+// ============================================================================
+// CONSTANTS
+// ============================================================================
+
+const TILE_WIDTH = 32;   // Largeur d'une tile isométrique en pixels
+const TILE_HEIGHT = 16;  // Hauteur d'une tile isométrique en pixels
+const CHUNK_SIZE = 16;   // Un chunk = 16x16 blocs
+
+// Taille d'un chunk en pixels (pour le calcul de visibilité)
+// Un chunk 16x16 en iso: largeur = 16*32 = 512px, hauteur = 16*16 = 256px
+const CHUNK_PIXEL_WIDTH = CHUNK_SIZE * TILE_WIDTH;
+const CHUNK_PIXEL_HEIGHT = CHUNK_SIZE * TILE_HEIGHT;
+
+const MIN_ZOOM = 0.5;
+const MAX_ZOOM = 2.5;
+const MAX_CACHE_SIZE = 100;
+const PRELOAD_RADIUS = 2;
+const MAX_CONCURRENT_LOADS = 6;  // Limite de requêtes API simultanées
+
+// ============================================================================
+// CHUNK MANAGER SERVICE
+// ============================================================================
 
 @Injectable({
   providedIn: 'root'
 })
 export class ChunkManager {
-  private cachedChunks = new Map<string, ChunkData>();
-  private maxCacheSize = 100; // Maximum chunks in cache
-  private preloadRadius = 3; // Preload chunks within this radius
-  private visibleChunks = new Set<string>();
-  private isPreloading = false;
+  // Cache of loaded chunks
+  private cache = new Map<string, ChunkData>();
+  
+  // Chunks currently loading (to avoid duplicate requests)
+  private loading = new Map<string, Promise<ChunkData | null>>();
+  
+  // Chunks known to be non-existent (404)
+  private missing = new Set<string>();
 
-  private readonly TILE_WIDTH = 32;
-  private readonly TILE_HEIGHT = 16;
-  private readonly CHUNK_SIZE = 16;
-
-  private missingChunks = new Set<string>();
-  private loadingChunks = new Map<string, Promise<ChunkData | null>>();
-
-  // Viewport and camera settings
+  // Camera position (in world/block coordinates)
   private cameraX = 0;
   private cameraZ = 0;
+
+  // Camera velocity (for movement prediction)
+  private cameraVelX = 0;
+  private cameraVelZ = 0;
+  private lastCameraUpdate = 0;
+
+  // Zoom level
   private zoom = 1.0;
+  
+  // Viewport dimensions
   private viewportWidth = 1920;
   private viewportHeight = 1080;
 
+  // Preloading state
+  private isPreloading = false;
+
   constructor(private dataService: DataService) {}
 
-  /**
-   * Convert screen coordinates to world coordinates
-   */
-  screenToWorld(screenX: number, screenY: number): { worldX: number, worldZ: number } {
-    // Reverse the container transform: first remove translation, then zoom
-    const isoX = (screenX - this.viewportWidth / 2) / this.zoom;
-    const isoY = (screenY - this.viewportHeight / 2) / this.zoom;
-
-    // Convert back from isometric to world coordinates in camera-relative space
-    // iso_x = (TILE_WIDTH/2) * (dx - dz)
-    // iso_y = (TILE_HEIGHT/2) * (dx + dz)
-    const relWorldX = (isoX / (this.TILE_WIDTH / 2) + isoY / (this.TILE_HEIGHT / 2)) / 2;
-    const relWorldZ = (isoY / (this.TILE_HEIGHT / 2) - isoX / (this.TILE_WIDTH / 2)) / 2;
-
-    const worldX = this.cameraX + relWorldX;
-    const worldZ = this.cameraZ + relWorldZ;
-
-    return { worldX, worldZ };
-  }
+  // ==========================================================================
+  // COORDINATE CONVERSIONS
+  // ==========================================================================
 
   /**
-   * Convert world coordinates to screen coordinates (without zoom, zoom is applied on container)
-   */
-  worldToScreen(worldX: number, worldZ: number): { screenX: number, screenY: number } {
-    // Isometric projection - positions are in unzoomed space
-    // The zoom is applied on the worldContainer, not on individual positions
-    const dx = worldX - this.cameraX;
-    const dz = worldZ - this.cameraZ;
-
-    // Use same formula as backend: x = 16 * (i - j), y = 8 * (i + j)
-    const isoX = (dx - dz) * (this.TILE_WIDTH / 2);
-    const isoY = (dx + dz) * (this.TILE_HEIGHT / 2);
-
-    return { screenX: isoX, screenY: isoY };
-  }
-
-  /**
-   * Convert world coordinates to chunk coordinates
+   * Converts world coordinates (blocks) to chunk coordinates
    */
   worldToChunk(worldX: number, worldZ: number): ChunkCoords {
     return {
-      x: Math.floor(worldX / this.CHUNK_SIZE),
-      z: Math.floor(worldZ / this.CHUNK_SIZE)
+      x: Math.floor(worldX / CHUNK_SIZE),
+      z: Math.floor(worldZ / CHUNK_SIZE)
     };
   }
 
   /**
-   * Get the viewport bounds in world coordinates
+   * Generates a unique key string to identify a chunk
    */
-  getViewportBounds(): ViewportBounds {
-    const topLeft = this.screenToWorld(0, 0);
-    const bottomRight = this.screenToWorld(this.viewportWidth, this.viewportHeight);
+  getChunkKey(coords: ChunkCoords): string {
+    return `${coords.x},${coords.z}`;
+  }
+
+  /**
+   * Parses a chunk key back into coordinates
+   */
+  private parseChunkKey(key: string): ChunkCoords {
+    const [x, z] = key.split(',').map(Number);
+    return { x, z };
+  }
+
+  /**
+   * Returns the screen offset for the camera.
+   * The backend sends ABSOLUTE positions, so we just apply
+   * an offset based on the camera position.
+   */
+  getCameraScreenOffset(): { x: number; y: number } {
+    // Camera is in world coordinates (blocks)
+    // Convert it to isometric screen offset
+    const screenX = (this.cameraX - this.cameraZ) * (TILE_WIDTH / 2);
+    const screenY = (this.cameraX + this.cameraZ) * (TILE_HEIGHT / 2);
+    return { x: -screenX, y: -screenY };
+  }
+
+  /**
+   * Chunk position - backend sends absolute coordinates,
+   * so all chunks are at (0,0) + camera offset
+   */
+  chunkToScreen(chunkX: number, chunkZ: number): { x: number; y: number } {
+    // All chunks use the same offset (the camera)
+    return this.getCameraScreenOffset();
+  }
+
+  /**
+   * Converts screen coordinates to world coordinates
+   * Used for mouse picking and visibility calculations
+   */
+  screenToWorld(screenX: number, screenY: number): { worldX: number; worldZ: number } {
+    // Remove centering and zoom
+    const localX = (screenX - this.viewportWidth / 2) / this.zoom;
+    const localY = (screenY - this.viewportHeight / 2) / this.zoom;
+
+    // Inverse isometric projection
+    const dx = (localX / (TILE_WIDTH / 2) + localY / (TILE_HEIGHT / 2)) / 2;
+    const dz = (localY / (TILE_HEIGHT / 2) - localX / (TILE_WIDTH / 2)) / 2;
 
     return {
-      minX: Math.min(topLeft.worldX, bottomRight.worldX),
-      maxX: Math.max(topLeft.worldX, bottomRight.worldX),
-      minZ: Math.min(topLeft.worldZ, bottomRight.worldZ),
-      maxZ: Math.max(topLeft.worldZ, bottomRight.worldZ)
+      worldX: this.cameraX + dx,
+      worldZ: this.cameraZ + dz
     };
   }
 
+  // ==========================================================================
+  // VISIBILITY CALCULATION
+  // ==========================================================================
+
   /**
-   * Get all chunk coordinates that should be visible in the current viewport
+   * Calculates which chunks should be visible in the current viewport
+   * Uses a diamond-shaped frustum for isometric view
    */
   getVisibleChunkCoords(): ChunkCoords[] {
-    const bounds = this.getViewportBounds();
+    // Viewport center in world coordinates
+    const center = this.screenToWorld(this.viewportWidth / 2, this.viewportHeight / 2);
+    
+    // Calculate visibility radius taking zoom into account
+    // When zooming out (zoom < 1), we see more of the world
+    // In iso, the visible diagonal is important
+    const diagonalScreen = Math.sqrt(
+      this.viewportWidth * this.viewportWidth + 
+      this.viewportHeight * this.viewportHeight
+    );
+    
+    // Convert to world radius
+    // Division by zoom: if zoom = 0.5, we see 2x more
+    // Division by TILE_WIDTH/2 because it's the scale of iso projection
+    const worldRadius = (diagonalScreen / 2) / ((TILE_WIDTH / 2) * this.zoom);
+    
+    // Add margin for partially visible chunks
+    const chunkRadius = Math.ceil(worldRadius / CHUNK_SIZE) + 1;
+    
+    // Center in chunk coordinates
+    const centerChunkX = Math.floor(center.worldX / CHUNK_SIZE);
+    const centerChunkZ = Math.floor(center.worldZ / CHUNK_SIZE);
+    
     const chunks: ChunkCoords[] = [];
-
-    // Padding depends on zoom: more padding when zoomed in, less when zoomed out
-    const padding = Math.max(1, Math.round(2 / this.zoom));
-
-    const minChunkX = Math.floor(bounds.minX / this.CHUNK_SIZE) - padding; // Add padding
-    const maxChunkX = Math.floor(bounds.maxX / this.CHUNK_SIZE) + padding;
-    const minChunkZ = Math.floor(bounds.minZ / this.CHUNK_SIZE) - padding;
-    const maxChunkZ = Math.floor(bounds.maxZ / this.CHUNK_SIZE) + padding;
-
-    for (let x = minChunkX; x <= maxChunkX; x++) {
-      for (let z = minChunkZ; z <= maxChunkZ; z++) {
-        chunks.push({ x, z });
+    
+    // Diamond shape for isometric (Manhattan distance)
+    for (let x = centerChunkX - chunkRadius; x <= centerChunkX + chunkRadius; x++) {
+      for (let z = centerChunkZ - chunkRadius; z <= centerChunkZ + chunkRadius; z++) {
+        // Manhattan distance from center
+        const dist = Math.abs(x - centerChunkX) + Math.abs(z - centerChunkZ);
+        
+        // Keep only chunks within visibility diamond
+        if (dist <= chunkRadius) {
+          chunks.push({ x, z });
+        }
       }
     }
 
@@ -136,313 +199,454 @@ export class ChunkManager {
   }
 
   /**
-   * Generate a unique key for chunk coordinates
+   * Returns loaded and visible chunks, sorted by depth (depth sorting)
    */
-  getChunkKey(coords: ChunkCoords): string {
-    return `${coords.x},${coords.z}`;
+  getVisibleChunks(): ChunkData[] {
+    const visibleCoords = this.getVisibleChunkCoords();
+    const visibleKeys = new Set(visibleCoords.map(c => this.getChunkKey(c)));
+
+    return Array.from(this.cache.values())
+      .filter(chunk => visibleKeys.has(this.getChunkKey(chunk.coords)) && chunk.chunk !== null)
+      .sort((a, b) => {
+        // Depth sorting: chunks "behind" (small x+z) are drawn first
+        // This is crucial for correct isometric occlusion
+        return (a.coords.x + a.coords.z) - (b.coords.x + b.coords.z);
+      });
   }
 
+  // ==========================================================================
+  // CHUNK LOADING
+  // ==========================================================================
+
   /**
-   * Load a single chunk
+   * Loads a chunk from the API
    */
   private async loadChunk(coords: ChunkCoords): Promise<ChunkData | null> {
     const key = this.getChunkKey(coords);
 
-    if (this.missingChunks.has(key)) {
+    // Already in cache
+    if (this.cache.has(key)) {
+      const cached = this.cache.get(key)!;
+      cached.lastAccessed = Date.now();
+      return cached;
+    }
+
+    // Known to be missing
+    if (this.missing.has(key)) {
       return null;
     }
 
-    const existingPromise = this.loadingChunks.get(key);
-    if (existingPromise) {
-      return existingPromise;
+    // Already loading
+    if (this.loading.has(key)) {
+      return this.loading.get(key)!;
     }
 
-    const loadPromise = (async () => {
-      try {
-        const data = await firstValueFrom(this.dataService.getJSONData("", coords.x, coords.z));
+    // Create loading promise
+    const loadPromise = this.fetchChunk(coords);
+    this.loading.set(key, loadPromise);
 
-        if (!data?.data?.surface_blocks?.length) {
-          console.warn(`Chunk (${coords.x}, ${coords.z}) has no valid data`);
-          this.missingChunks.add(key);
-          return null;
-        }
+    try {
+      const result = await loadPromise;
+      return result;
+    } finally {
+      this.loading.delete(key);
+    }
+  }
 
-        const chunkData: ChunkData = {
-          coords,
-          data: data.data.surface_blocks as (string | number)[][],
-          chunk: null, // Will be created when needed
-          lastAccessed: Date.now(),
-          isVisible: true
-        };
+  /**
+   * Fetches the chunk from the backend API
+   */
+  private async fetchChunk(coords: ChunkCoords): Promise<ChunkData | null> {
+    const key = this.getChunkKey(coords);
 
-        this.cachedChunks.set(key, chunkData);
-        this.missingChunks.delete(key);
+    try {
+      const response = await firstValueFrom(
+        this.dataService.getJSONData('', coords.x, coords.z, 77)
+      );
 
-        console.log(`Loaded chunk: (${coords.x}, ${coords.z})`);
-        return chunkData;
-
-      } catch (error) {
-        const errorMessage = error instanceof Error ? error.message : String(error);
-        console.warn(`Failed to load chunk (${coords.x}, ${coords.z}): ${errorMessage}`);
-        this.missingChunks.add(key);
+      if (!response?.data?.surface_blocks?.length) {
+        this.missing.add(key);
         return null;
-      } finally {
-        this.loadingChunks.delete(key);
       }
-    })();
 
-    this.loadingChunks.set(key, loadPromise);
-    return loadPromise;
+      const tileData = response.data.surface_blocks as (string | number)[][];
+
+      const chunkData: ChunkData = {
+        coords,
+        tileData,
+        chunk: null,
+        lastAccessed: Date.now(),
+        state: 'loaded'
+      };
+
+      this.cache.set(key, chunkData);
+      return chunkData;
+
+    } catch (error) {
+      console.warn(`Chunk (${coords.x}, ${coords.z}) not found`);
+      this.missing.add(key);
+      return null;
+    }
   }
 
   /**
-   * Ensure cache doesn't exceed maximum size (LRU eviction)
+   * Checks if a chunk is in the visible area
    */
-  private maintainCacheSize(): void {
-    if (this.cachedChunks.size <= this.maxCacheSize) return;
+  private isVisible(coords: ChunkCoords): boolean {
+    const visible = this.getVisibleChunkCoords();
+    return visible.some(c => c.x === coords.x && c.z === coords.z);
+  }
 
-    // Sort chunks by last accessed time (oldest first)
-    const sortedChunks = Array.from(this.cachedChunks.entries())
-      .sort(([,a], [,b]) => a.lastAccessed - b.lastAccessed);
+  /**
+   * Checks if a chunk is in the preload range
+   */
+  private isInPreloadRange(coords: ChunkCoords): boolean {
+    const chunkCam = this.worldToChunk(this.cameraX, this.cameraZ);
+    const dist = Math.max(Math.abs(coords.x - chunkCam.x), Math.abs(coords.z - chunkCam.z));
+    
+    // Approximation: preload radius is based on visibility + margin
+    // We consider preloading slightly further than visible area
+    const visibleRadius = Math.ceil(this.viewportWidth / (CHUNK_SIZE * TILE_WIDTH * this.zoom));
+    return dist <= visibleRadius + PRELOAD_RADIUS;
+  }
 
-    // Remove oldest chunks
-    const chunksToRemove = sortedChunks.slice(0, this.cachedChunks.size - this.maxCacheSize);
-    chunksToRemove.forEach(([key, chunkData]) => {
-      if (chunkData.chunk) {
-        chunkData.chunk.destroy()
-      }
-      this.cachedChunks.delete(key);
+  /**
+   * Updates chunk loading (Visible + Preload)
+   * Absolute priority to closest visible chunks.
+   * Uses available slots up to MAX_CONCURRENT_LOADS.
+   */
+  updateChunks(atlas: Atlas): void {
+    const visibleCoords = this.getVisibleChunkCoords();
+    const preloadCoords = this.getPreloadChunkCoords();
+    
+    // Combine lists (visible prioritize)
+    // Use Map for uniqueness by string key
+    const uniqueCoords = new Map<string, ChunkCoords>();
+    
+    // Visible first
+    visibleCoords.forEach(c => uniqueCoords.set(this.getChunkKey(c), c));
+    
+    // Then preload (if not already present)
+    preloadCoords.forEach(c => {
+        const key = this.getChunkKey(c);
+        if (!uniqueCoords.has(key)) uniqueCoords.set(key, c);
     });
 
-    console.log(`Cache maintenance: removed ${chunksToRemove.length} old chunks`);
-  }
+    // Convert to array for sorting
+    const allCoords = Array.from(uniqueCoords.values());
+    
+    const cameraChunk = this.worldToChunk(this.cameraX, this.cameraZ);
 
-  /**
-   * Update which chunks are currently visible
-   */
-  updateVisibleChunks(): void {
-    const visibleCoords = this.getVisibleChunkCoords();
-    const newVisibleSet = new Set(visibleCoords.map(coord => this.getChunkKey(coord)));
-
-    // Update visibility flags
-    this.cachedChunks.forEach((chunkData, key) => {
-      chunkData.isVisible = newVisibleSet.has(key);
-      if (chunkData.isVisible) {
-        chunkData.lastAccessed = Date.now();
-      }
+    // Sort by distance to camera
+    allCoords.sort((a, b) => {
+      const distA = Math.abs(a.x - cameraChunk.x) + Math.abs(a.z - cameraChunk.z);
+      const distB = Math.abs(b.x - cameraChunk.x) + Math.abs(b.z - cameraChunk.z);
+      
+      // Priority bonus for strictly visible chunks
+      const isVisibleA = this.isVisible(a);
+      const isVisibleB = this.isVisible(b);
+      
+      if (isVisibleA && !isVisibleB) return -1;
+      if (!isVisibleA && isVisibleB) return 1;
+      
+      return distA - distB;
     });
 
-    this.visibleChunks = newVisibleSet;
-  }
+    // Start loading
+    let currentLoading = this.loading.size;
 
-  /**
-   * Ensure all visible chunks are loaded
-   */
-  async ensureVisibleChunksLoaded(atlas: Atlas): Promise<void> {
-    const visibleCoords = this.getVisibleChunkCoords();
-    const loadPromises: Promise<void>[] = [];
+    for (const coords of allCoords) {
+      if (currentLoading >= MAX_CONCURRENT_LOADS) break;
 
-    for (const coords of visibleCoords) {
       const key = this.getChunkKey(coords);
-      let chunkData = this.cachedChunks.get(key);
+      let chunkData = this.cache.get(key);
 
-      if (!chunkData) {
-        // Load chunk data
-        const loadPromise = this.loadChunk(coords).then(loadedData => {
-          if (loadedData) {
-            chunkData = loadedData;
-            // Create PIXI chunk if we have atlas
-            if (atlas && atlas.getAtlas()) {
-              chunkData.chunk = new Chunk(Date.now(), atlas.getAtlas(), chunkData.data);
-            }
+      if (!chunkData && !this.loading.has(key) && !this.missing.has(key)) {
+        currentLoading++;
+        this.loadChunk(coords).then(loaded => {
+          // Check relevance (if still visible/preloadable)
+          if (!this.isVisible(coords) && !this.isInPreloadRange(coords)) return;
+
+          if (loaded && !loaded.chunk && atlas?.getAtlas()) {
+            loaded.chunk = new Chunk(Date.now(), atlas.getAtlas(), loaded.tileData);
           }
         });
-        loadPromises.push(loadPromise);
-      } else {
-        // Update access time
+      } else if (chunkData) {
         chunkData.lastAccessed = Date.now();
-        chunkData.isVisible = true;
-
-        // Create PIXI chunk if not already created
-        if (!chunkData.chunk && atlas && atlas.getAtlas()) {
-          chunkData.chunk = new Chunk(Date.now(), atlas.getAtlas(), chunkData.data);
+        if (!chunkData.chunk && atlas?.getAtlas()) {
+          chunkData.chunk = new Chunk(Date.now(), atlas.getAtlas(), chunkData.tileData);
         }
       }
     }
 
-    await Promise.all(loadPromises);
-    this.maintainCacheSize();
+    this.evictOldChunks();
   }
 
   /**
-   * Start preloading chunks around current position
+   * Calculates coordinates of chunks to preload
+   * Uses velocity to predict where the camera is going
+   */
+  private getPreloadChunkCoords(): ChunkCoords[] {
+    const coords: ChunkCoords[] = [];
+    
+    // Current position and predicted (0.5 seconds in future)
+    const predictTime = 0.5; // seconds
+    const predictedX = this.cameraX + this.cameraVelX * predictTime;
+    const predictedZ = this.cameraZ + this.cameraVelZ * predictTime;
+    
+    // Chunks for predicted position
+    const predictedChunk = this.worldToChunk(predictedX, predictedZ);
+    
+    // Adaptive preload radius based on speed
+    const speed = Math.sqrt(this.cameraVelX * this.cameraVelX + this.cameraVelZ * this.cameraVelZ);
+    const speedFactor = Math.min(2, 1 + speed / 100); // Faster speed = more preload
+    
+    const visibleRadius = Math.ceil(this.viewportWidth / (CHUNK_SIZE * TILE_WIDTH * this.zoom));
+    const radius = Math.ceil((visibleRadius + PRELOAD_RADIUS) * speedFactor);
+    
+    // Elliptical shape in direction of movement
+    const velNorm = Math.sqrt(this.cameraVelX * this.cameraVelX + this.cameraVelZ * this.cameraVelZ);
+    const dirX = velNorm > 0.1 ? this.cameraVelX / velNorm : 0;
+    const dirZ = velNorm > 0.1 ? this.cameraVelZ / velNorm : 0;
+    
+    for (let dx = -radius; dx <= radius; dx++) {
+      for (let dz = -radius; dz <= radius; dz++) {
+        // Stretch preload in movement direction
+        const stretch = 1 + Math.max(0, (dx * dirX + dz * dirZ) / radius) * speedFactor;
+        const dist = Math.sqrt(dx * dx + dz * dz);
+        
+        if (dist <= radius * stretch) {
+          coords.push({ 
+            x: predictedChunk.x + dx, 
+            z: predictedChunk.z + dz 
+          });
+        }
+      }
+    }
+    
+    return coords;
+  }
+
+  /**
+   * Blocking version for initial loading (compatibility)
+   */
+  async ensureVisibleChunksLoaded(atlas: Atlas): Promise<void> {
+    // Just start async loading, do not block
+    this.updateChunks(atlas);
+  }
+
+  // ==========================================================================
+  // PRELOADING
+  // ==========================================================================
+
+  /**
+   * Starts preloading chunks around current position
    */
   startPreloading(atlas: Atlas): void {
     if (this.isPreloading) return;
-
     this.isPreloading = true;
 
-    // Run preloading in background
-    setTimeout(() => this.preloadChunks(atlas), 100);
+    // Run in background
+    setTimeout(() => this.preloadNearbyChunks(atlas), 100);
   }
 
   /**
-   * Preload chunks in a larger radius around current position
+   * Preload chunks in a radius around the camera
    */
-  private async preloadChunks(atlas: Atlas): Promise<void> {
+  private async preloadNearbyChunks(atlas: Atlas): Promise<void> {
     try {
-      const currentChunk = this.worldToChunk(this.cameraX, this.cameraZ);
-      const preloadPromises: Promise<void>[] = [];
+      const cameraChunk = this.worldToChunk(this.cameraX, this.cameraZ);
+      const toPreload: ChunkCoords[] = [];
 
-      // Adjust preload radius dynamically based on zoom to balance performance and smoothness
-      const zoom = this.zoom;
-      const zoomFactor = Math.max(0.5, Math.min(2.0, zoom));
-      const effectiveRadius = Math.max(1, Math.round(this.preloadRadius * zoomFactor));
-
-      // Preload chunks in a larger radius
-      for (let dx = -effectiveRadius; dx <= effectiveRadius; dx++) {
-        for (let dz = -effectiveRadius; dz <= effectiveRadius; dz++) {
-          const coords = { x: currentChunk.x + dx, z: currentChunk.z + dz };
+      // Collect chunks to preload
+      for (let dx = -PRELOAD_RADIUS; dx <= PRELOAD_RADIUS; dx++) {
+        for (let dz = -PRELOAD_RADIUS; dz <= PRELOAD_RADIUS; dz++) {
+          const coords = { x: cameraChunk.x + dx, z: cameraChunk.z + dz };
           const key = this.getChunkKey(coords);
 
-          // Skip if already cached or currently visible
-          if (this.cachedChunks.has(key) || this.visibleChunks.has(key)) {
-            continue;
+          if (!this.cache.has(key) && !this.missing.has(key)) {
+            toPreload.push(coords);
           }
-
-          const preloadPromise = this.loadChunk(coords).then(chunkData => {
-            if (chunkData && atlas && atlas.getAtlas()) {
-              chunkData.chunk = new Chunk(Date.now(), atlas.getAtlas(), chunkData.data);
-            }
-          });
-
-          preloadPromises.push(preloadPromise);
         }
       }
 
-      await Promise.all(preloadPromises);
-      this.maintainCacheSize();
+      // Sort by distance
+      toPreload.sort((a, b) => {
+        const distA = Math.abs(a.x - cameraChunk.x) + Math.abs(a.z - cameraChunk.z);
+        const distB = Math.abs(b.x - cameraChunk.x) + Math.abs(b.z - cameraChunk.z);
+        return distA - distB;
+      });
 
-    } catch (error) {
-      const errorMessage = error instanceof Error ? error.message : String(error);
-      console.error('Preloading failed:', errorMessage);
+      // Load
+      for (const coords of toPreload) {
+        const loaded = await this.loadChunk(coords);
+        if (loaded && !loaded.chunk && atlas?.getAtlas()) {
+          loaded.chunk = new Chunk(Date.now(), atlas.getAtlas(), loaded.tileData);
+        }
+      }
+
+      this.evictOldChunks();
+
     } finally {
       this.isPreloading = false;
     }
   }
 
+  // ==========================================================================
+  // CACHE MANAGEMENT
+  // ==========================================================================
+
   /**
-   * Get all visible chunks for rendering
+   * Evicts oldest chunks if cache is full (LRU)
    */
-  getVisibleChunks(): ChunkData[] {
-    return Array.from(this.cachedChunks.values())
-      .filter(chunkData => chunkData.isVisible && chunkData.chunk)
-      .sort((a, b) => {
-        // Sort by isometric depth so that farther chunks are drawn first
-        // For a fixed isometric camera, depth can be approximated by (x + z)
-        const depthA = a.coords.x + a.coords.z;
-        const depthB = b.coords.x + b.coords.z;
-        return depthA - depthB;
-      });
+  private evictOldChunks(): void {
+    if (this.cache.size <= MAX_CACHE_SIZE) return;
+
+    const entries = Array.from(this.cache.entries())
+      .sort(([, a], [, b]) => a.lastAccessed - b.lastAccessed);
+
+    const toRemove = entries.slice(0, this.cache.size - MAX_CACHE_SIZE);
+    
+    for (const [key, data] of toRemove) {
+      if (data.chunk) {
+        data.chunk.destroy();
+      }
+      this.cache.delete(key);
+    }
   }
 
   /**
-   * Update camera position
+   * Completely clears the cache
+   */
+  clearCache(): void {
+    for (const data of this.cache.values()) {
+      if (data.chunk) {
+        data.chunk.destroy();
+      }
+    }
+    this.cache.clear();
+    this.missing.clear();
+    this.loading.clear();
+  }
+
+  // ==========================================================================
+  // CAMERA CONTROLS
+  // ==========================================================================
+
+  /**
+   * Sets camera position (in world/block coordinates)
    */
   setCameraPosition(x: number, z: number): void {
+    // Calculate velocity based on movement
+    const now = Date.now();
+    if (this.lastCameraUpdate > 0) {
+      const dt = (now - this.lastCameraUpdate) / 1000; // in seconds
+      if (dt > 0 && dt < 1) { // Ignore large deltas
+        this.cameraVelX = (x - this.cameraX) / dt;
+        this.cameraVelZ = (z - this.cameraZ) / dt;
+        
+        // Limit velocity to avoid extreme values
+        const maxVel = 500; // blocks/second max
+        this.cameraVelX = Math.max(-maxVel, Math.min(maxVel, this.cameraVelX));
+        this.cameraVelZ = Math.max(-maxVel, Math.min(maxVel, this.cameraVelZ));
+      }
+    }
+    
     this.cameraX = x;
     this.cameraZ = z;
-    this.updateVisibleChunks();
+    this.lastCameraUpdate = now;
   }
 
   /**
-   * Update zoom level
-   */
-  setZoom(zoom: number): void {
-    this.zoom = Math.max(0.5, Math.min(2.5, zoom)); // Clamp zoom between 0.5 and 2.5
-    this.updateVisibleChunks();
-  }
-
-  /**
-   * Update viewport size
-   */
-  setViewportSize(width: number, height: number): void {
-    this.viewportWidth = width;
-    this.viewportHeight = height;
-    this.updateVisibleChunks();
-  }
-
-  /**
-   * Move camera by delta
+   * Moves camera by a delta (in world coordinates)
    */
   moveCamera(deltaX: number, deltaZ: number): void {
     this.setCameraPosition(this.cameraX + deltaX, this.cameraZ + deltaZ);
   }
 
   /**
-   * Pan camera using screen-space deltas
+   * Pans camera from a screen delta (drag)
    */
-  panCamera(deltaScreenX: number, deltaScreenY: number): void {
-    const zoom = this.zoom;
-    const sx = (this.TILE_WIDTH / 2) * zoom;
-    const sy = (this.TILE_HEIGHT / 2) * zoom;
+  panCamera(screenDeltaX: number, screenDeltaY: number): void {
+    // Convert screen delta to world delta (inverse of iso projection)
+    const sx = (TILE_WIDTH / 2) * this.zoom;
+    const sy = (TILE_HEIGHT / 2) * this.zoom;
 
-    const relX = deltaScreenX / sx;
-    const relY = deltaScreenY / sy;
+    const relX = screenDeltaX / sx;
+    const relY = screenDeltaY / sy;
 
+    // Inverse isometric
     const worldDX = (relX + relY) / 2;
     const worldDZ = (relY - relX) / 2;
 
+    // Move in opposite direction of drag
     this.moveCamera(-worldDX, -worldDZ);
   }
 
   /**
-   * Get current camera position
+   * Returns current camera position
    */
-  getCameraPosition(): { x: number, z: number } {
+  getCameraPosition(): { x: number; z: number } {
     return { x: this.cameraX, z: this.cameraZ };
   }
 
+  // ==========================================================================
+  // ZOOM CONTROLS
+  // ==========================================================================
+
   /**
-   * Get current zoom level
+   * Sets zoom level (clamped between MIN_ZOOM and MAX_ZOOM)
+   */
+  setZoom(newZoom: number): void {
+    this.zoom = Math.max(MIN_ZOOM, Math.min(MAX_ZOOM, newZoom));
+  }
+
+  /**
+   * Returns current zoom level
    */
   getZoom(): number {
     return this.zoom;
   }
 
-  /**
-   * Clear all cached chunks
-   */
-  clearCache(): void {
-    this.cachedChunks.forEach(chunkData => {
-      if (chunkData.chunk) {
-        chunkData.chunk.destroy();
-      }
-    });
-    this.cachedChunks.clear();
-    this.visibleChunks.clear();
-    console.log('Chunk cache cleared');
-  }
+  // ==========================================================================
+  // VIEWPORT
+  // ==========================================================================
 
   /**
-   * Get chunk data by coordinates (for rendering)
+   * Updates viewport size
+   */
+  setViewportSize(width: number, height: number): void {
+    this.viewportWidth = width;
+    this.viewportHeight = height;
+  }
+
+  // ==========================================================================
+  // ACCESSORS (for rendering)
+  // ==========================================================================
+
+  /**
+   * Retrieves chunk data by coordinates
    */
   getChunkData(coords: ChunkCoords): ChunkData | undefined {
-    const key = this.getChunkKey(coords);
-    return this.cachedChunks.get(key);
+    return this.cache.get(this.getChunkKey(coords));
   }
 
   /**
-   * Get cache statistics
+   * Checks if a chunk is marked as missing (404)
    */
-  getCacheStats(): { total: number, visible: number, cached: number } {
-    const visible = Array.from(this.cachedChunks.values()).filter(c => c.isVisible).length;
-    const cached = this.cachedChunks.size;
+  isChunkMissing(coords: ChunkCoords): boolean {
+    return this.missing.has(this.getChunkKey(coords));
+  }
 
+  /**
+   * Cache statistics (debug)
+   */
+  getCacheStats() {
     return {
-      total: cached,
-      visible: visible,
-      cached: cached - visible
+      total: this.cache.size,
+      visible: this.getVisibleChunks().length,
+      cached: this.cache.size,
+      loading: this.loading.size
     };
   }
 }

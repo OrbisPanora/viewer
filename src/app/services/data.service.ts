@@ -16,8 +16,8 @@ export class DataService {
     this.path = 'http://localhost:8000/api/';
   }
 
-  getJSONData(name: string, x: number, y: number): Observable<ApiResponse<ChunkData>> {
-    return  this.http.get<ApiResponse<ChunkData>>(`http://localhost:8000/api/chunks/${x}/${y}?mode=isometric`); //`data/${name}.json`
+  getJSONData(name: string, x: number, y: number, z: number): Observable<ApiResponse<ChunkData>> {
+    return  this.http.get<ApiResponse<ChunkData>>(`http://localhost:8000/api/chunks/${x}/${y}/${z}?mode=isometric`); //`data/${name}.json`
   }
 
   getBlockJSON(name: string): Observable<any> {

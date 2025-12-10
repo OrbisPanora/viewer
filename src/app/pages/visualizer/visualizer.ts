@@ -30,6 +30,7 @@ export class VisualizerPage  { //implements AfterViewInit
   // New chunk management system
   private chunkManager!: ChunkManager;
   private worldContainer!: PIXI.Container;
+  private placeholderContainer!: PIXI.Container;
   private isDragging = false;
   private lastMouseX = 0;
   private lastMouseY = 0;
@@ -37,10 +38,47 @@ export class VisualizerPage  { //implements AfterViewInit
   private chunkUpdateScheduled = false;
   private chunkUpdateTimeout: any = null;
   private renderedChunkKeys = new Set<string>();
+  private chunkPlaceholders = new Map<string, PIXI.Graphics>();
+  private invalidChunkPlaceholders = new Map<string, PIXI.Graphics>();
+  private hasAutocentered = false;
+  private debugElement: HTMLElement | null = null;
 
   @ViewChild('canvasContainer', {static: true}) canvasContainer!: ElementRef;
 
-  constructor(private router: Router, private dataService: DataService, private chunkManagerService: ChunkManager, private errorModalService: ErrorModalService) {}
+  constructor(private router: Router, private dataService: DataService, private chunkManagerService: ChunkManager, private errorModalService: ErrorModalService) {
+    this.createDebugOverlay();
+  }
+
+  private createDebugOverlay() {
+    this.debugElement = document.createElement('div');
+    this.debugElement.style.position = 'absolute';
+    this.debugElement.style.top = '10px';
+    this.debugElement.style.left = '10px';
+    this.debugElement.style.backgroundColor = 'rgba(0, 0, 0, 0.7)';
+    this.debugElement.style.color = 'white';
+    this.debugElement.style.padding = '10px';
+    this.debugElement.style.fontFamily = 'monospace';
+    this.debugElement.style.pointerEvents = 'none';
+    this.debugElement.style.zIndex = '1000';
+    document.body.appendChild(this.debugElement);
+  }
+
+  private updateDebugInfo() {
+    if (!this.debugElement) return;
+
+    const stats = this.chunkManager.getCacheStats();
+    const camera = this.chunkManager.getCameraPosition();
+    const zoom = this.chunkManager.getZoom();
+    const visibleChunks = this.chunkManager.getVisibleChunkCoords().length;
+
+    this.debugElement.innerHTML = `
+      <div><strong>Camera:</strong> (${camera.x.toFixed(1)}, ${camera.z.toFixed(1)})</div>
+      <div><strong>Zoom:</strong> ${zoom.toFixed(2)}</div>
+      <div><strong>Chunks:</strong> ${visibleChunks} visible / ${stats.total} cached</div>
+      <div><strong>Loading:</strong> ${stats.loading}</div>
+      <div><strong>Rendered:</strong> ${this.worldContainer.children.length}</div>
+    `;
+  }
 
   goBack(): void {
     this.router.navigate(['/']);
@@ -129,8 +167,14 @@ export class VisualizerPage  { //implements AfterViewInit
     try {
       console.log('Initializing world viewer...');
 
-      // Create world container for all chunks
-      this.worldContainer = new PIXI.Container({isRenderGroup: true});
+      // Create placeholder container (behind chunks)
+      this.placeholderContainer = new PIXI.Container();
+      this.placeholderContainer.x = 0;
+      this.placeholderContainer.y = 0;
+      this.app.stage.addChild(this.placeholderContainer);
+      
+      // Create world container for all chunks (on top of placeholders)
+      this.worldContainer = new PIXI.Container();
       this.worldContainer.x = 0;
       this.worldContainer.y = 0;
       this.app.stage.addChild(this.worldContainer);
@@ -146,23 +190,21 @@ export class VisualizerPage  { //implements AfterViewInit
         throw new Error('Failed to load atlas');
       }
 
-      // Initial camera position at the center of the first chunk (0,0)
-      this.chunkManager.setCameraPosition(8, 8);
+      // Initial camera position at (0, 0) - will be auto-centered on the first chunk
+      this.chunkManager.setCameraPosition(0, 0);
       this.chunkManager.setZoom(1.0);
+      console.log('Waiting for first chunk to auto-center...');
 
-      // Load initial visible chunks
-      await this.chunkManager.ensureVisibleChunksLoaded(this.atlasLoader);
-
-      // Start preloading in background
-      this.chunkManager.startPreloading(this.atlasLoader);
-
-      // Setup input handling
+      // Setup input handling FIRST (to allow navigation immediately)
       this.setupInputHandling();
 
-      // Start render loop
+      // Start render loop FIRST (to display chunks as soon as they arrive)
       this.startRenderLoop();
 
-      console.log('World viewer initialized successfully');
+      // Start chunk loading (non-blocking)
+      this.chunkManager.updateChunks(this.atlasLoader);
+
+      console.log('World viewer initialized - chunks loading in background...');
 
     } catch (error) {
       console.error('Failed to initialize world viewer:', error);
@@ -298,15 +340,16 @@ export class VisualizerPage  { //implements AfterViewInit
    * Start the render loop that updates visible chunks
    */
   private startRenderLoop(): void {
-    const render = () => {
-      // Only render already loaded chunks; loading is scheduled separately
-      this.renderChunks();
+    if (!isPlatformBrowser(this.platformId)) return;
 
-      // Continue the loop
-      this.renderLoopId = requestAnimationFrame(render);
+    const loop = () => {
+      this.updateRenderPositions();
+      this.updateDebugInfo(); // Update debug info every frame
+      this.renderChunks();
+      this.renderLoopId = requestAnimationFrame(loop);
     };
 
-    render();
+    this.renderLoopId = requestAnimationFrame(loop);
   }
 
   private scheduleChunkUpdate(): void {
@@ -327,39 +370,26 @@ export class VisualizerPage  { //implements AfterViewInit
 
   /**
    * Update which chunks are visible and ensure they're loaded
+   * Non-blocking to allow fluid navigation
    */
-  private async updateVisibleChunks(): Promise<void> {
-    try {
-      // Ensure visible chunks are loaded
-      await this.chunkManager.ensureVisibleChunksLoaded(this.atlasLoader);
-
-      // Update rendering
-      this.renderChunks();
-
-      // Start preloading if not already running
-      this.chunkManager.startPreloading(this.atlasLoader);
-
-    } catch (error) {
-      console.warn('Failed to update visible chunks:', error);
-    }
+  private updateVisibleChunks(): void {
+    // Start loading visible chunks (non-blocking)
+    this.chunkManager.updateChunks(this.atlasLoader);
   }
 
   /**
    * Fast update of chunk positions without checking visibility/loading
+   * Backend sends absolute coordinates, so we just move the worldContainer
    */
   private updateRenderPositions(): void {
-    for (const key of this.renderedChunkKeys) {
-      const [x, z] = key.split(',').map(Number);
-      const chunkData = this.chunkManager.getChunkData({x, z});
-      
-      if (chunkData && chunkData.chunk) {
-         const chunkWorldX = chunkData.coords.x * 1.1; 
-         const chunkWorldZ = chunkData.coords.z * 1.1;
-         
-         const screenPos = this.chunkManager.worldToScreen(chunkWorldX, chunkWorldZ);
-         chunkData.chunk.setXY(screenPos.screenX, screenPos.screenY);
-      }
-    }
+    const cameraOffset = this.chunkManager.getCameraScreenOffset();
+    const offsetX = window.innerWidth / 2 + cameraOffset.x * this.chunkManager.getZoom();
+    const offsetY = window.innerHeight / 2 + cameraOffset.y * this.chunkManager.getZoom();
+    
+    this.worldContainer.x = offsetX;
+    this.worldContainer.y = offsetY;
+    this.placeholderContainer.x = offsetX;
+    this.placeholderContainer.y = offsetY;
   }
 
   /**
@@ -369,54 +399,239 @@ export class VisualizerPage  { //implements AfterViewInit
     const visibleChunks = this.chunkManager.getVisibleChunks();
     const newVisibleKeys = new Set(visibleChunks.map(c => this.chunkManager.getChunkKey(c.coords)));
 
-    // Apply zoom and centering on the world container
+    // Apply zoom on both containers
     const zoom = this.chunkManager.getZoom();
     this.worldContainer.scale.set(zoom);
-    this.worldContainer.x = window.innerWidth / 2;
-    this.worldContainer.y = window.innerHeight / 2;
+    this.placeholderContainer.scale.set(zoom);
+    
+    // Apply camera offset - backend sends absolute positions
+    const cameraOffset = this.chunkManager.getCameraScreenOffset();
+    const offsetX = window.innerWidth / 2 + cameraOffset.x * zoom;
+    const offsetY = window.innerHeight / 2 + cameraOffset.y * zoom;
+    this.worldContainer.x = offsetX;
+    this.worldContainer.y = offsetY;
+    this.placeholderContainer.x = offsetX;
+    this.placeholderContainer.y = offsetY;
+    
+    // Manage placeholders for loading and invalid chunks
+    const visibleCoords = this.chunkManager.getVisibleChunkCoords();
+    const loadingKeys = new Set<string>();
+    const invalidKeys = new Set<string>();
+    
+    // Create/update placeholders for visible chunks
+    for (const coords of visibleCoords) {
+      const key = this.chunkManager.getChunkKey(coords);
+      const chunkData = this.chunkManager.getChunkData(coords);
+      const isMissing = this.chunkManager.isChunkMissing(coords);
+      
+      // If the chunk is marked as missing (404)
+      if (isMissing) {
+        invalidKeys.add(key);
+        
+        // Create a white/grey placeholder for invalid chunk if it doesn't exist
+        if (!this.invalidChunkPlaceholders.has(key)) {
+          const placeholder = new PIXI.Graphics();
+          
+          // Draw white/grey diamond to indicate invalid chunk
+          const size = 16 * 16; // 16 tiles * 16 pixels half-width
+          placeholder.lineStyle(1, 0xCCCCCC, 0.3);
+          placeholder.beginFill(0xFFFFFF, 0.05);
+          
+          // Isometric diamond
+          placeholder.moveTo(0, -size/2);
+          placeholder.lineTo(size, 0);
+          placeholder.lineTo(0, size/2);
+          placeholder.lineTo(-size, 0);
+          placeholder.closePath();
+          
+          placeholder.endFill();
+          
+          // Position according to chunk isometric coordinates
+          const worldX = coords.x * 16 + 8;
+          const worldZ = coords.z * 16 + 8;
+          placeholder.x = (worldX - worldZ) * 16;  // TILE_WIDTH/2 = 16
+          placeholder.y = (worldX + worldZ) * 8;   // TILE_HEIGHT/2 = 8
+          
+          placeholder.alpha = 0.2;
+          
+          this.invalidChunkPlaceholders.set(key, placeholder);
+          this.placeholderContainer.addChild(placeholder);
+        }
+      }
+      // If the chunk is not loaded yet (but not invalid)
+      else if (!chunkData || !chunkData.chunk) {
+        loadingKeys.add(key);
+        
+        // Remove invalid placeholder if it existed
+        if (this.invalidChunkPlaceholders.has(key)) {
+          const invalidPlaceholder = this.invalidChunkPlaceholders.get(key)!;
+          this.placeholderContainer.removeChild(invalidPlaceholder);
+          invalidPlaceholder.destroy();
+          this.invalidChunkPlaceholders.delete(key);
+        }
+        
+        // Create a green loading placeholder if it doesn't exist
+        if (!this.chunkPlaceholders.has(key)) {
+          const placeholder = new PIXI.Graphics();
+          
+          // Draw green diamond for loading
+          const size = 16 * 16; // 16 tiles * 16 pixels half-width
+          placeholder.lineStyle(2, 0x4CAF50, 0.5);
+          placeholder.beginFill(0x2E7D32, 0.1);
+          
+          // Isometric diamond
+          placeholder.moveTo(0, -size/2);
+          placeholder.lineTo(size, 0);
+          placeholder.lineTo(0, size/2);
+          placeholder.lineTo(-size, 0);
+          placeholder.closePath();
+          
+          placeholder.endFill();
+          
+          // Position according to chunk isometric coordinates
+          const worldX = coords.x * 16 + 8;
+          const worldZ = coords.z * 16 + 8;
+          placeholder.x = (worldX - worldZ) * 16;  // TILE_WIDTH/2 = 16
+          placeholder.y = (worldX + worldZ) * 8;   // TILE_HEIGHT/2 = 8
+          
+          // Pulsing animation
+          placeholder.alpha = 0.3;
+          
+          this.chunkPlaceholders.set(key, placeholder);
+          this.placeholderContainer.addChild(placeholder);
+        }
+        
+        // Animate loading placeholder (pulsing)
+        const placeholder = this.chunkPlaceholders.get(key)!;
+        placeholder.alpha = 0.3 + Math.sin(Date.now() / 500 + coords.x + coords.z) * 0.2;
+      }
+    }
+    
+    // Remove loading placeholders that are no longer needed
+    for (const [key, placeholder] of this.chunkPlaceholders) {
+      if (!loadingKeys.has(key)) {
+        this.placeholderContainer.removeChild(placeholder);
+        placeholder.destroy();
+        this.chunkPlaceholders.delete(key);
+      }
+    }
+    
+    // Remove invalid placeholders that are no longer visible
+    for (const [key, placeholder] of this.invalidChunkPlaceholders) {
+      if (!invalidKeys.has(key)) {
+        this.placeholderContainer.removeChild(placeholder);
+        placeholder.destroy();
+        this.invalidChunkPlaceholders.delete(key);
+      }
+    }
 
-    // Remove chunks that are no longer visible
+    // Remove chunks that are no longer visible from PIXI container
+    // This frees up GPU memory but keeps data in JS cache
     for (const key of this.renderedChunkKeys) {
       if (!newVisibleKeys.has(key)) {
         const [x, z] = key.split(',').map(Number);
         const chunkData = this.chunkManager.getChunkData({x, z});
         if (chunkData?.chunk) {
+          // Remove from container
           this.worldContainer.removeChild(chunkData.chunk.getTilemap());
+          // Optional: Destroy PIXI object if memory is tight, but keeping it allows fast scroll back
+          // chunkData.chunk.destroy(); 
+          // chunkData.chunk = null; 
         }
       }
     }
 
-    // Add or update visible chunks
+    // Add visible chunks - all at position (0,0) because backend provides absolute coordinates
     for (const chunkData of visibleChunks) {
       if (chunkData.chunk) {
-        // Calculate chunk position in screen coordinates
-        // Using factor 1.1 based on user feedback to fine-tune spacing.
-        const chunkWorldX = chunkData.coords.x * 1.1; 
-        const chunkWorldZ = chunkData.coords.z * 1.1;
-
-        const screenPos = this.chunkManager.worldToScreen(chunkWorldX, chunkWorldZ);
-
-        // Position the chunk in local container space (before zoom/translation)
-        chunkData.chunk.setXY(screenPos.screenX, screenPos.screenY);
+        // Chunks at (0,0) - backend calculates absolute tile positions
+        chunkData.chunk.setXY(0, 0);
+        
+        // Z-order based on chunk coords (x+z for isometric back-to-front)
+        const tilemap = chunkData.chunk.getTilemap();
+        tilemap.zIndex = chunkData.coords.x + chunkData.coords.z;
 
         // Add to container if not already present
         const key = this.chunkManager.getChunkKey(chunkData.coords);
         if (!this.renderedChunkKeys.has(key)) {
-          this.worldContainer.addChild(chunkData.chunk.getTilemap());
+          this.worldContainer.addChild(tilemap);
+          
+          // Auto-center on the first VALID rendered chunk
+          if (!this.hasAutocentered) {
+            // Check that chunk has data (not a 404)
+            if (chunkData.tileData && chunkData.tileData.length > 0) {
+              this.hasAutocentered = true;
+              
+              // Center camera on this chunk (perfect chunk center)
+              const centerWorldX = chunkData.coords.x * 16 + 8; // Exact center of chunk in world
+              const centerWorldZ = chunkData.coords.z * 16 + 8;
+              
+              console.log(`Auto-centering camera on first valid chunk at (${chunkData.coords.x}, ${chunkData.coords.z}) with ${chunkData.tileData.length} tiles`);
+              
+              // Immediate perfect centering (no animation for the first chunk)
+              this.chunkManager.setCameraPosition(centerWorldX, centerWorldZ);
+              
+              // Force immediate update
+              this.updateRenderPositions();
+              this.updateVisibleChunks(); // Load neighbor chunks immediately
+            }
+          }
         }
       }
     }
 
+    // Enable zIndex sorting
+    this.worldContainer.sortableChildren = true;
+
     // Update rendered keys set
     this.renderedChunkKeys = newVisibleKeys;
+  }
 
-    // Debug, dev only (/!\ please remove when deploying /!\)
-    const stats = this.chunkManager.getCacheStats();
-    const camera = this.chunkManager.getCameraPosition();
-    console.log(`Camera: (${camera.x.toFixed(1)}, ${camera.z.toFixed(1)}) | Chunks: ${stats.visible}/${stats.total}`);
+  /**
+   * Smoothly animates the camera to a target position
+   * Uses ease-in-out interpolation for natural movement
+   */
+  private animateCameraTo(targetX: number, targetZ: number, duration: number): void {
+    const currentPos = this.chunkManager.getCameraPosition();
+    const startX = currentPos.x;
+    const startZ = currentPos.z;
+    const startTime = Date.now();
+    
+    const animate = () => {
+      const elapsed = Date.now() - startTime;
+      const progress = Math.min(elapsed / duration, 1);
+      
+      // Easing function (ease-in-out)
+      // Quadratic easing for smooth start/end
+      const eased = progress < 0.5
+        ? 2 * progress * progress
+        : 1 - Math.pow(-2 * progress + 2, 2) / 2;
+      
+      // Linear interpolation with eased progress
+      const currentX = startX + (targetX - startX) * eased;
+      const currentZ = startZ + (targetZ - startZ) * eased;
+      
+      this.chunkManager.setCameraPosition(currentX, currentZ);
+      this.updateRenderPositions();
+      
+      // Continue animation if not finished
+      if (progress < 1) {
+        requestAnimationFrame(animate);
+      } else {
+        // Trigger chunk update after animation completes
+        this.updateVisibleChunks();
+      }
+    };
+    
+    animate();
   }
 
   ngOnDestroy() {
+    // Remove debug overlay
+    if (this.debugElement && document.body.contains(this.debugElement)) {
+      document.body.removeChild(this.debugElement);
+    }
+
     // Cancel render loop
     if (this.renderLoopId !== null) {
       cancelAnimationFrame(this.renderLoopId);
