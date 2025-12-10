@@ -41,5 +41,9 @@ export class DataService {
     return this.http.post(`${this.path}upload/world`, formData);
   }
 
+  checkWorldHealth(): Observable<{ world_loaded: boolean }> {
+    return this.http.get<{ world_loaded: boolean }>(`${this.path}worlds/health`);
+  }
+
 
 }

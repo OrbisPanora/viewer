@@ -5,12 +5,10 @@ import { DataService } from '../../services/data.service';
 import * as PIXI from 'pixi.js';
 import { Atlas } from '../../services/atlas';
 import { Chunk } from '../../factories/chunk';
-import { firstValueFrom, Observable, BehaviorSubject } from 'rxjs';
-import { MouseEvents } from '../../events/mouse';
+import { firstValueFrom, BehaviorSubject } from 'rxjs';
 import { ChunkManager } from '../../services/chunk-manager.service';
+import { ErrorModalService} from '../../services/error.service';
 
-
-//import JSONK from '../../../../public/test5.json';
 
 @Component({
   selector: 'app-visualizer',
@@ -40,40 +38,77 @@ export class VisualizerPage  { //implements AfterViewInit
 
   @ViewChild('canvasContainer', {static: true}) canvasContainer!: ElementRef;
 
-  constructor(private router: Router, private dataService: DataService, private chunkManagerService: ChunkManager) {}
+  constructor(private router: Router, private dataService: DataService, private chunkManagerService: ChunkManager, private errorModalService: ErrorModalService) {}
 
   goBack(): void {
     this.router.navigate(['/']);
   }
 
-  /**
-   * Check if the world is loaded by polling the health endpoint
-   */
+
   private async waitForWorldLoaded(): Promise<void> {
-    return new Promise((resolve) => {
+    const MAX_ATTEMPTS = 3;
+    let attempts = 0;
+
+    return new Promise((resolve, reject) => {
       const checkWorldLoaded = async () => {
         try {
-          const response = await fetch('http://localhost:8000/api/worlds/health');
-          if (response.ok) {
-            const data = await response.json();
-            if (data.world_loaded) {
-              console.log('World is loaded, proceeding with initialization');
-              resolve();
-              return;
-            }
+          const data = await firstValueFrom(this.dataService.checkWorldHealth());
+
+          if (data.world_loaded) {
+            console.log('World is loaded, proceeding with initialization');
+            resolve();
+            return;
           }
-          console.log('World not loaded yet, waiting...');
+
+          attempts++;
+          console.log(`World not loaded yet (attempt ${attempts}/${MAX_ATTEMPTS}), waiting...`);
+
+          if (attempts >= MAX_ATTEMPTS) {
+            console.error('No world found after multiple attempts');
+            this.handleNoWorldAvailable();
+            reject(new Error('No world loaded'));
+            return;
+          }
+
         } catch (error) {
           console.warn('Failed to check world status:', error);
+          attempts++;
+
+          if (attempts >= MAX_ATTEMPTS) {
+            this.handleConnectionError();
+            reject(error);
+            return;
+          }
         }
 
-        // Check again in 2 seconds
         setTimeout(checkWorldLoaded, 2000);
       };
 
       checkWorldLoaded();
     });
   }
+
+
+  private async handleNoWorldAvailable(): Promise<void> {
+    await this.errorModalService.showError(
+      'No World Found',
+      'Please upload a world first.',
+      'Go back to home'
+    );
+    await this.router.navigate(['/']);
+  }
+
+
+  private async handleConnectionError(): Promise<void> {
+    await this.errorModalService.showError(
+      'Connexion Error',
+      'Cannot connect to the server. Please try again later.',
+      'Go back to home'
+    );
+    await this.router.navigate(['/']);
+  }
+
+
 
   async ngOnInit() {
     if (!isPlatformBrowser(this.platformId)) {
@@ -140,7 +175,7 @@ export class VisualizerPage  { //implements AfterViewInit
       backgroundColor: 0x77b5fe,
       antialias: true,     // Enable antialiasing
       resolution: 1,       // Resolution / device pixel ratio
-      preference: 'webgl', // or 'webgl' // but as webgpu is now supported by chrome , lets use it cuz we get better performance as we use the gpu to render 
+      preference: 'webgl', // or 'webgl' // but as webgpu is now supported by chrome , lets use it cuz we get better performance as we use the gpu to render
     });
 
     //document.body.appendChild(this.app.canvas);
