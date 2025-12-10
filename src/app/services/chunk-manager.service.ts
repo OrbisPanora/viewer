@@ -54,16 +54,13 @@ export class ChunkManager {
    * Convert screen coordinates to world coordinates
    */
   screenToWorld(screenX: number, screenY: number): { worldX: number, worldZ: number } {
-    // Reverse isometric projection
-    // Assuming isometric projection: x_iso = 16 * (x - z), y_iso = 8 * (x + z) - 16 * y
-    // For 2D view, we ignore the height component
-
+    // Reverse the container transform: first remove translation, then zoom
     const isoX = (screenX - this.viewportWidth / 2) / this.zoom;
     const isoY = (screenY - this.viewportHeight / 2) / this.zoom;
 
     // Convert back from isometric to world coordinates in camera-relative space
-    // iso_x = (TILE_WIDTH/2) * (world_x - world_z)
-    // iso_y = (TILE_HEIGHT/2) * (world_x + world_z)
+    // iso_x = (TILE_WIDTH/2) * (dx - dz)
+    // iso_y = (TILE_HEIGHT/2) * (dx + dz)
     const relWorldX = (isoX / (this.TILE_WIDTH / 2) + isoY / (this.TILE_HEIGHT / 2)) / 2;
     const relWorldZ = (isoY / (this.TILE_HEIGHT / 2) - isoX / (this.TILE_WIDTH / 2)) / 2;
 
@@ -74,15 +71,17 @@ export class ChunkManager {
   }
 
   /**
-   * Convert world coordinates to screen coordinates
+   * Convert world coordinates to screen coordinates (without zoom, zoom is applied on container)
    */
   worldToScreen(worldX: number, worldZ: number): { screenX: number, screenY: number } {
-    // Isometric projection
+    // Isometric projection - positions are in unzoomed space
+    // The zoom is applied on the worldContainer, not on individual positions
     const dx = worldX - this.cameraX;
     const dz = worldZ - this.cameraZ;
 
-    const isoX = (dx - dz) * (this.TILE_WIDTH / 2) * this.zoom + this.viewportWidth / 2;
-    const isoY = (dx + dz) * (this.TILE_HEIGHT / 2) * this.zoom + this.viewportHeight / 2;
+    // Use same formula as backend: x = 16 * (i - j), y = 8 * (i + j)
+    const isoX = (dx - dz) * (this.TILE_WIDTH / 2);
+    const isoY = (dx + dz) * (this.TILE_HEIGHT / 2);
 
     return { screenX: isoX, screenY: isoY };
   }
@@ -139,7 +138,7 @@ export class ChunkManager {
   /**
    * Generate a unique key for chunk coordinates
    */
-  private getChunkKey(coords: ChunkCoords): string {
+  getChunkKey(coords: ChunkCoords): string {
     return `${coords.x},${coords.z}`;
   }
 
@@ -423,6 +422,14 @@ export class ChunkManager {
     this.cachedChunks.clear();
     this.visibleChunks.clear();
     console.log('Chunk cache cleared');
+  }
+
+  /**
+   * Get chunk data by coordinates (for rendering)
+   */
+  getChunkData(coords: ChunkCoords): ChunkData | undefined {
+    const key = this.getChunkKey(coords);
+    return this.cachedChunks.get(key);
   }
 
   /**

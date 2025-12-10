@@ -35,6 +35,8 @@ export class VisualizerPage  { //implements AfterViewInit
   private lastMouseY = 0;
   private renderLoopId: number | null = null;
   private chunkUpdateScheduled = false;
+  private chunkUpdateTimeout: any = null;
+  private renderedChunkKeys = new Set<string>();
 
   @ViewChild('canvasContainer', {static: true}) canvasContainer!: ElementRef;
 
@@ -226,6 +228,10 @@ export class VisualizerPage  { //implements AfterViewInit
       // Let ChunkManager convert screen-space drag into world-space camera movement
       this.chunkManager.panCamera(deltaX, deltaY);
 
+      // Fast update: only update positions of currently rendered chunks
+      this.updateRenderPositions();
+      
+      // Debounce the heavy chunk loading/checking
       this.scheduleChunkUpdate();
 
       this.lastMouseX = e.global.x;
@@ -304,15 +310,19 @@ export class VisualizerPage  { //implements AfterViewInit
   }
 
   private scheduleChunkUpdate(): void {
-    if (this.chunkUpdateScheduled) {
-      return;
+    if (this.chunkUpdateTimeout) {
+      clearTimeout(this.chunkUpdateTimeout);
     }
 
-    this.chunkUpdateScheduled = true;
-    requestAnimationFrame(() => {
-      this.chunkUpdateScheduled = false;
-      this.updateVisibleChunks();
-    });
+    this.chunkUpdateTimeout = setTimeout(() => {
+      if (this.chunkUpdateScheduled) return;
+      
+      this.chunkUpdateScheduled = true;
+      requestAnimationFrame(() => {
+        this.chunkUpdateScheduled = false;
+        this.updateVisibleChunks();
+      });
+    }, 50); // 50ms debounce
   }
 
   /**
@@ -335,30 +345,70 @@ export class VisualizerPage  { //implements AfterViewInit
   }
 
   /**
+   * Fast update of chunk positions without checking visibility/loading
+   */
+  private updateRenderPositions(): void {
+    for (const key of this.renderedChunkKeys) {
+      const [x, z] = key.split(',').map(Number);
+      const chunkData = this.chunkManager.getChunkData({x, z});
+      
+      if (chunkData && chunkData.chunk) {
+         const chunkWorldX = chunkData.coords.x * 1.1; 
+         const chunkWorldZ = chunkData.coords.z * 1.1;
+         
+         const screenPos = this.chunkManager.worldToScreen(chunkWorldX, chunkWorldZ);
+         chunkData.chunk.setXY(screenPos.screenX, screenPos.screenY);
+      }
+    }
+  }
+
+  /**
    * Render all visible chunks to the screen
    */
   private renderChunks(): void {
     const visibleChunks = this.chunkManager.getVisibleChunks();
+    const newVisibleKeys = new Set(visibleChunks.map(c => this.chunkManager.getChunkKey(c.coords)));
 
-    // Clear existing chunks from container
-    this.worldContainer.removeChildren();
+    // Apply zoom and centering on the world container
+    const zoom = this.chunkManager.getZoom();
+    this.worldContainer.scale.set(zoom);
+    this.worldContainer.x = window.innerWidth / 2;
+    this.worldContainer.y = window.innerHeight / 2;
 
-    // Add visible chunks to container
+    // Remove chunks that are no longer visible
+    for (const key of this.renderedChunkKeys) {
+      if (!newVisibleKeys.has(key)) {
+        const [x, z] = key.split(',').map(Number);
+        const chunkData = this.chunkManager.getChunkData({x, z});
+        if (chunkData?.chunk) {
+          this.worldContainer.removeChild(chunkData.chunk.getTilemap());
+        }
+      }
+    }
+
+    // Add or update visible chunks
     for (const chunkData of visibleChunks) {
       if (chunkData.chunk) {
         // Calculate chunk position in screen coordinates
-        const chunkWorldX = (chunkData.coords.x + 0.5) * 16; // Chunk center in world coords
-        const chunkWorldZ = (chunkData.coords.z + 0.5) * 16;
+        // Using factor 1.1 based on user feedback to fine-tune spacing.
+        const chunkWorldX = chunkData.coords.x * 1.1; 
+        const chunkWorldZ = chunkData.coords.z * 1.1;
 
         const screenPos = this.chunkManager.worldToScreen(chunkWorldX, chunkWorldZ);
 
-        // Position the chunk
+        // Position the chunk in local container space (before zoom/translation)
         chunkData.chunk.setXY(screenPos.screenX, screenPos.screenY);
 
-        // Add to container
-        this.worldContainer.addChild(chunkData.chunk.getTilemap());
+        // Add to container if not already present
+        const key = this.chunkManager.getChunkKey(chunkData.coords);
+        if (!this.renderedChunkKeys.has(key)) {
+          this.worldContainer.addChild(chunkData.chunk.getTilemap());
+        }
       }
     }
+
+    // Update rendered keys set
+    this.renderedChunkKeys = newVisibleKeys;
 
     // Debug, dev only (/!\ please remove when deploying /!\)
     const stats = this.chunkManager.getCacheStats();
@@ -384,6 +434,9 @@ export class VisualizerPage  { //implements AfterViewInit
     if (this.chunkManager) {
       this.chunkManager.clearCache();
     }
+    
+    // Clear rendered chunks tracking
+    this.renderedChunkKeys.clear();
 
     window.removeEventListener('resize', () => this.onWindowResize());
   }
