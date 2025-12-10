@@ -30,14 +30,15 @@ const angularApp = new AngularNodeAppEngine();
 app.use(
   express.static(browserDistFolder, {
     maxAge: '1y',
-    index: 'index.html',
+    index: false,
+    redirect: false,
   }),
 );
 
 /**
  * Handle all other requests by rendering the Angular application.
  */
-app.use('*', (req, res, next) => {
+app.use((req, res, next) => {
   angularApp
     .handle(req)
     .then((response) =>
