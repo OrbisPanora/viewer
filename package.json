@@ -7,8 +7,7 @@
     "build": "ng build",
     "build:prod": "ng build -c production",
     "watch": "ng build --watch --configuration development",
-    "test": "ng test",
-    "serve:ssr:web": "node dist/web/server/server.mjs"
+    "test": "ng test"
   },
   "prettier": {
     "printWidth": 100,
