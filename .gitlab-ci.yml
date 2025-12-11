@@ -40,7 +40,7 @@ build-web-image:
     DESTINATION_REGISTRY_IMAGE_VERSION: "latest"
   only:
     - main
-x  when: on_success
+  when: on_success
 
 push-web-image:
   extends: .build-and-push-docker-image
