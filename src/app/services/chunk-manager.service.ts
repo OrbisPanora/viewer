@@ -261,7 +261,7 @@ export class ChunkManager {
 
     try {
       const response = await firstValueFrom(
-        this.dataService.getJSONData('', coords.x, coords.z, -64)
+        this.dataService.getJSONData('', coords.x, coords.z, 62) //-60
       );
 
       if (!response?.data?.surface_blocks?.length) {
