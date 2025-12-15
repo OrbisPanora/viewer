@@ -70,6 +70,11 @@ export class VisualizerPage  { //implements AfterViewInit
     const camera = this.chunkManager.getCameraPosition();
     const zoom = this.chunkManager.getZoom();
     const visibleChunks = this.chunkManager.getVisibleChunkCoords().length;
+    const radiusStatus = this.chunkManager.getRadiusStatus();
+
+    // Status color and text for radius completion
+    const radiusColor = radiusStatus.complete ? '#4CAF50' : (radiusStatus.pending > 0 ? '#FFC107' : '#FF5722');
+    const radiusText = radiusStatus.complete ? '✓ Complete' : `Loading... ${radiusStatus.pending} pending`;
 
     this.debugElement.innerHTML = `
       <div><strong>Camera:</strong> (${camera.x.toFixed(1)}, ${camera.z.toFixed(1)})</div>
@@ -77,6 +82,7 @@ export class VisualizerPage  { //implements AfterViewInit
       <div><strong>Chunks:</strong> ${visibleChunks} visible / ${stats.total} cached</div>
       <div><strong>Loading:</strong> ${stats.loading}</div>
       <div><strong>Rendered:</strong> ${this.worldContainer.children.length}</div>
+      <div><strong>Radius:</strong> ${radiusStatus.loaded}/${radiusStatus.total} <span style="color:${radiusColor}">${radiusText}</span></div>
     `;
   }
 
@@ -157,7 +163,7 @@ export class VisualizerPage  { //implements AfterViewInit
 
     // Initialize ChunkManager
     this.chunkManager = this.chunkManagerService;
-    this.chunkManager.setViewportSize(window.innerWidth, window.innerHeight);
+    this.chunkManager.setViewportSize(window.innerWidth*2, window.innerHeight*2);
 
     await this.initPixiScene();
 
@@ -229,7 +235,7 @@ export class VisualizerPage  { //implements AfterViewInit
   }
 
   private onWindowResize() {
-    if (!this.app) return;
+    if (!this.app || !this.app.renderer) return;
 
     this.app.renderer.resize(window.innerWidth, window.innerHeight);
     this.chunkManager.setViewportSize(window.innerWidth, window.innerHeight);
@@ -551,30 +557,35 @@ export class VisualizerPage  { //implements AfterViewInit
         const tilemap = chunkData.chunk.getTilemap();
         tilemap.zIndex = chunkData.coords.x + chunkData.coords.z;
 
-        // Add to container if not already present
         const key = this.chunkManager.getChunkKey(chunkData.coords);
-        if (!this.renderedChunkKeys.has(key)) {
+        
+        // Always ensure chunk is in the container (it may have been removed when scrolling out)
+        if (tilemap.parent !== this.worldContainer) {
+          // Remove from old parent if any
+          if (tilemap.parent) {
+            tilemap.parent.removeChild(tilemap);
+          }
           this.worldContainer.addChild(tilemap);
-          
-          // Auto-center on the first VALID rendered chunk
-          if (!this.hasAutocentered) {
-            // Check that chunk has data (not a 404)
-            if (chunkData.tileData && chunkData.tileData.length > 0) {
-              this.hasAutocentered = true;
-              
-              // Center camera on this chunk (perfect chunk center)
-              const centerWorldX = chunkData.coords.x * 16 + 8; // Exact center of chunk in world
-              const centerWorldZ = chunkData.coords.z * 16 + 8;
-              
-              console.log(`Auto-centering camera on first valid chunk at (${chunkData.coords.x}, ${chunkData.coords.z}) with ${chunkData.tileData.length} tiles`);
-              
-              // Immediate perfect centering (no animation for the first chunk)
-              this.chunkManager.setCameraPosition(centerWorldX, centerWorldZ);
-              
-              // Force immediate update
-              this.updateRenderPositions();
-              this.updateVisibleChunks(); // Load neighbor chunks immediately
-            }
+        }
+        
+        // Auto-center on the first VALID rendered chunk (only once)
+        if (!this.hasAutocentered) {
+          // Check that chunk has data (not a 404)
+          if (chunkData.tileData && chunkData.tileData.length > 0) {
+            this.hasAutocentered = true;
+            
+            // Center camera on this chunk (perfect chunk center)
+            const centerWorldX = chunkData.coords.x * 16 + 8; // Exact center of chunk in world
+            const centerWorldZ = chunkData.coords.z * 16 + 8;
+            
+            console.log(`Auto-centering camera on first valid chunk at (${chunkData.coords.x}, ${chunkData.coords.z}) with ${chunkData.tileData.length} tiles`);
+            
+            // Immediate perfect centering (no animation for the first chunk)
+            this.chunkManager.setCameraPosition(centerWorldX, centerWorldZ);
+            
+            // Force immediate update
+            this.updateRenderPositions();
+            this.updateVisibleChunks(); // Load neighbor chunks immediately
           }
         }
       }

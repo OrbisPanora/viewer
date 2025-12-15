@@ -34,10 +34,10 @@ const CHUNK_SIZE = 16;   // Un chunk = 16x16 blocs
 const CHUNK_PIXEL_WIDTH = CHUNK_SIZE * TILE_WIDTH;
 const CHUNK_PIXEL_HEIGHT = CHUNK_SIZE * TILE_HEIGHT;
 
-const MIN_ZOOM = 0.5;
+const MIN_ZOOM = 1.5;
 const MAX_ZOOM = 2.5;
-const MAX_CACHE_SIZE = 100;
-const PRELOAD_RADIUS = 2;
+const MAX_CACHE_SIZE = 500;  // Increased for larger radius support
+const PRELOAD_RADIUS = 4;
 const MAX_CONCURRENT_LOADS = 6;  // Limite de requêtes API simultanées
 
 // ============================================================================
@@ -75,6 +75,11 @@ export class ChunkManager {
 
   // Preloading state
   private isPreloading = false;
+
+  // Continuous loading state
+  private continuousLoadingActive = false;
+  private continuousLoadingAtlas: Atlas | null = null;
+  private pendingLoads = new Set<string>();
 
   constructor(private dataService: DataService) {}
 
@@ -314,45 +319,123 @@ export class ChunkManager {
    * Updates chunk loading (Visible + Preload)
    * Absolute priority to closest visible chunks.
    * Uses available slots up to MAX_CONCURRENT_LOADS.
+   * Now triggers continuous loading to load all chunks in radius.
    */
   updateChunks(atlas: Atlas): void {
+    // Store atlas for continuous loading
+    this.continuousLoadingAtlas = atlas;
+    
+    // Start continuous loading if not already active
+    if (!this.continuousLoadingActive) {
+      this.startContinuousLoading();
+    }
+    
+    // Also do immediate loading for responsiveness
+    this.loadNextBatch();
+  }
+
+  /**
+   * Starts the continuous loading loop
+   * This will keep loading chunks until all in radius are loaded
+   */
+  private startContinuousLoading(): void {
+    if (this.continuousLoadingActive) return;
+    this.continuousLoadingActive = true;
+    
+    this.continuousLoadingLoop();
+  }
+
+  /**
+   * Stops the continuous loading loop
+   */
+  stopContinuousLoading(): void {
+    this.continuousLoadingActive = false;
+  }
+
+  /**
+   * The main continuous loading loop
+   * Checks every 100ms if there are more chunks to load
+   */
+  private continuousLoadingLoop(): void {
+    if (!this.continuousLoadingActive) return;
+
+    // Check if there are chunks to load
+    const chunksToLoad = this.getChunksNeedingLoad();
+    
+    if (chunksToLoad.length > 0 && this.loading.size < MAX_CONCURRENT_LOADS) {
+      this.loadNextBatch();
+    }
+
+    // Continue the loop - check again after a short delay
+    // This allows the API to breathe between batches
+    setTimeout(() => {
+      this.continuousLoadingLoop();
+    }, 150); // 150ms between batch checks
+  }
+
+  /**
+   * Gets all chunks that need to be loaded (not cached, not loading, not missing)
+   */
+  private getChunksNeedingLoad(): ChunkCoords[] {
+    const visibleCoords = this.getVisibleChunkCoords();
+    const preloadCoords = this.getPreloadChunkCoords();
+    
+    const uniqueCoords = new Map<string, ChunkCoords>();
+    visibleCoords.forEach(c => uniqueCoords.set(this.getChunkKey(c), c));
+    preloadCoords.forEach(c => {
+      const key = this.getChunkKey(c);
+      if (!uniqueCoords.has(key)) uniqueCoords.set(key, c);
+    });
+
+    const allCoords = Array.from(uniqueCoords.values());
+    
+    // Filter to only chunks that need loading
+    return allCoords.filter(coords => {
+      const key = this.getChunkKey(coords);
+      return !this.cache.has(key) && !this.loading.has(key) && !this.missing.has(key);
+    });
+  }
+
+  /**
+   * Loads the next batch of chunks (up to MAX_CONCURRENT_LOADS)
+   */
+  private loadNextBatch(): void {
+    const atlas = this.continuousLoadingAtlas;
+    if (!atlas) return;
+
     const visibleCoords = this.getVisibleChunkCoords();
     const preloadCoords = this.getPreloadChunkCoords();
     
     // Combine lists (visible prioritize)
-    // Use Map for uniqueness by string key
     const uniqueCoords = new Map<string, ChunkCoords>();
-    
-    // Visible first
     visibleCoords.forEach(c => uniqueCoords.set(this.getChunkKey(c), c));
-    
-    // Then preload (if not already present)
     preloadCoords.forEach(c => {
         const key = this.getChunkKey(c);
         if (!uniqueCoords.has(key)) uniqueCoords.set(key, c);
     });
 
-    // Convert to array for sorting
     const allCoords = Array.from(uniqueCoords.values());
-    
     const cameraChunk = this.worldToChunk(this.cameraX, this.cameraZ);
 
-    // Sort by distance to camera
+    // Sort by distance to camera center (prioritize center strongly)
     allCoords.sort((a, b) => {
-      const distA = Math.abs(a.x - cameraChunk.x) + Math.abs(a.z - cameraChunk.z);
-      const distB = Math.abs(b.x - cameraChunk.x) + Math.abs(b.z - cameraChunk.z);
+      // Use Euclidean distance squared for better center prioritization
+      const distA = Math.pow(a.x - cameraChunk.x, 2) + Math.pow(a.z - cameraChunk.z, 2);
+      const distB = Math.pow(b.x - cameraChunk.x, 2) + Math.pow(b.z - cameraChunk.z, 2);
       
-      // Priority bonus for strictly visible chunks
+      // Strong priority for visible chunks
       const isVisibleA = this.isVisible(a);
       const isVisibleB = this.isVisible(b);
       
       if (isVisibleA && !isVisibleB) return -1;
       if (!isVisibleA && isVisibleB) return 1;
       
+      // For visible chunks, prioritize by distance from camera center
+      // Chunks closest to camera center load first (concentric circles)
       return distA - distB;
     });
 
-    // Start loading
+    // Start loading up to MAX_CONCURRENT_LOADS
     let currentLoading = this.loading.size;
 
     for (const coords of allCoords) {
@@ -498,14 +581,24 @@ export class ChunkManager {
 
   /**
    * Evicts oldest chunks if cache is full (LRU)
+   * NEVER evicts visible or preloading chunks
    */
   private evictOldChunks(): void {
     if (this.cache.size <= MAX_CACHE_SIZE) return;
 
-    const entries = Array.from(this.cache.entries())
+    // Get keys of chunks that should NEVER be evicted
+    const visibleKeys = new Set(this.getVisibleChunkCoords().map(c => this.getChunkKey(c)));
+    const preloadKeys = new Set(this.getPreloadChunkCoords().map(c => this.getChunkKey(c)));
+    const protectedKeys = new Set([...visibleKeys, ...preloadKeys]);
+
+    // Filter out protected chunks before sorting
+    const evictablEntries = Array.from(this.cache.entries())
+      .filter(([key]) => !protectedKeys.has(key))
       .sort(([, a], [, b]) => a.lastAccessed - b.lastAccessed);
 
-    const toRemove = entries.slice(0, this.cache.size - MAX_CACHE_SIZE);
+    // Calculate how many to remove
+    const toRemoveCount = this.cache.size - MAX_CACHE_SIZE;
+    const toRemove = evictablEntries.slice(0, toRemoveCount);
     
     for (const [key, data] of toRemove) {
       if (data.chunk) {
@@ -519,6 +612,9 @@ export class ChunkManager {
    * Completely clears the cache
    */
   clearCache(): void {
+    // Stop continuous loading
+    this.stopContinuousLoading();
+    
     for (const data of this.cache.values()) {
       if (data.chunk) {
         data.chunk.destroy();
@@ -527,6 +623,7 @@ export class ChunkManager {
     this.cache.clear();
     this.missing.clear();
     this.loading.clear();
+    this.pendingLoads.clear();
   }
 
   // ==========================================================================
@@ -562,6 +659,8 @@ export class ChunkManager {
    */
   moveCamera(deltaX: number, deltaZ: number): void {
     this.setCameraPosition(this.cameraX + deltaX, this.cameraZ + deltaZ);
+    // Force immediate batch reload to prioritize new position
+    this.loadNextBatch();
   }
 
   /**
@@ -581,6 +680,26 @@ export class ChunkManager {
 
     // Move in opposite direction of drag
     this.moveCamera(-worldDX, -worldDZ);
+    
+    // Refresh visible chunks' lastAccessed to protect them from eviction
+    this.refreshVisibleChunksAccess();
+  }
+
+  /**
+   * Updates lastAccessed for all currently visible chunks
+   * This protects them from LRU eviction when moving around
+   */
+  refreshVisibleChunksAccess(): void {
+    const now = Date.now();
+    const visibleCoords = this.getVisibleChunkCoords();
+    
+    for (const coords of visibleCoords) {
+      const key = this.getChunkKey(coords);
+      const chunkData = this.cache.get(key);
+      if (chunkData) {
+        chunkData.lastAccessed = now;
+      }
+    }
   }
 
   /**
@@ -647,6 +766,42 @@ export class ChunkManager {
       visible: this.getVisibleChunks().length,
       cached: this.cache.size,
       loading: this.loading.size
+    };
+  }
+
+  /**
+   * Returns radius loading status for debug
+   * Shows how many chunks are loaded vs total in radius
+   */
+  getRadiusStatus(): { loaded: number; total: number; pending: number; complete: boolean } {
+    const visibleCoords = this.getVisibleChunkCoords();
+    const preloadCoords = this.getPreloadChunkCoords();
+    
+    // Unique chunks in radius
+    const uniqueCoords = new Map<string, ChunkCoords>();
+    visibleCoords.forEach(c => uniqueCoords.set(this.getChunkKey(c), c));
+    preloadCoords.forEach(c => {
+      const key = this.getChunkKey(c);
+      if (!uniqueCoords.has(key)) uniqueCoords.set(key, c);
+    });
+
+    const total = uniqueCoords.size;
+    let loaded = 0;
+    let pending = 0;
+
+    for (const [key, coords] of uniqueCoords) {
+      if (this.cache.has(key) || this.missing.has(key)) {
+        loaded++;
+      } else if (this.loading.has(key)) {
+        pending++;
+      }
+    }
+
+    return {
+      loaded,
+      total,
+      pending,
+      complete: loaded === total
     };
   }
 }
