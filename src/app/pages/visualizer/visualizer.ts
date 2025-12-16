@@ -71,6 +71,7 @@ export class VisualizerPage  { //implements AfterViewInit
     const zoom = this.chunkManager.getZoom();
     const visibleChunks = this.chunkManager.getVisibleChunkCoords().length;
     const radiusStatus = this.chunkManager.getRadiusStatus();
+    const surfaceY = this.chunkManager.getAverageSurfaceY();
 
     // Status color and text for radius completion
     const radiusColor = radiusStatus.complete ? '#4CAF50' : (radiusStatus.pending > 0 ? '#FFC107' : '#FF5722');
@@ -78,6 +79,7 @@ export class VisualizerPage  { //implements AfterViewInit
 
     this.debugElement.innerHTML = `
       <div><strong>Camera:</strong> (${camera.x.toFixed(1)}, ${camera.z.toFixed(1)})</div>
+      <div><strong>Surface Y:</strong> ${surfaceY} (offset: ${surfaceY * 16}px)</div>
       <div><strong>Zoom:</strong> ${zoom.toFixed(2)}</div>
       <div><strong>Chunks:</strong> ${visibleChunks} visible / ${stats.total} cached</div>
       <div><strong>Loading:</strong> ${stats.loading}</div>
@@ -388,7 +390,8 @@ export class VisualizerPage  { //implements AfterViewInit
    * Backend sends absolute coordinates, so we just move the worldContainer
    */
   private updateRenderPositions(): void {
-    const cameraOffset = this.chunkManager.getCameraScreenOffset();
+    // Use RENDER offset (includes Y adjustment for surface height)
+    const cameraOffset = this.chunkManager.getCameraRenderOffset();
     const offsetX = window.innerWidth / 2 + cameraOffset.x * this.chunkManager.getZoom();
     const offsetY = window.innerHeight / 2 + cameraOffset.y * this.chunkManager.getZoom();
     
@@ -410,8 +413,8 @@ export class VisualizerPage  { //implements AfterViewInit
     this.worldContainer.scale.set(zoom);
     this.placeholderContainer.scale.set(zoom);
     
-    // Apply camera offset - backend sends absolute positions
-    const cameraOffset = this.chunkManager.getCameraScreenOffset();
+    // Apply camera RENDER offset (includes Y adjustment for surface height)
+    const cameraOffset = this.chunkManager.getCameraRenderOffset();
     const offsetX = window.innerWidth / 2 + cameraOffset.x * zoom;
     const offsetY = window.innerHeight / 2 + cameraOffset.y * zoom;
     this.worldContainer.x = offsetX;

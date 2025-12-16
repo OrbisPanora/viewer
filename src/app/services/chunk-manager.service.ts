@@ -16,6 +16,7 @@ export interface ChunkCoords {
 export interface ChunkData {
   coords: ChunkCoords;
   tileData: (string | number)[][];  // [textureName, screenX, screenY][]
+  surfaceY: number;                 // Minimum surface height (from palette)
   chunk: Chunk | null;              // PIXI tilemap instance
   lastAccessed: number;             // For LRU cache
   state: 'loading' | 'loaded' | 'error';
@@ -113,9 +114,42 @@ export class ChunkManager {
   }
 
   /**
-   * Returns the screen offset for the camera.
-   * The backend sends ABSOLUTE positions, so we just apply
-   * an offset based on the camera position.
+   * Gets the average surface Y of visible chunks for camera Y offset
+   * Returns the surfaceY of the chunk closest to camera, or 0 if none loaded
+   */
+  getAverageSurfaceY(): number {
+    const cameraChunk = this.worldToChunk(this.cameraX, this.cameraZ);
+    const key = this.getChunkKey(cameraChunk);
+    
+    // First try to get the chunk directly under camera
+    const centerChunk = this.cache.get(key);
+    if (centerChunk) {
+      return centerChunk.surfaceY;
+    }
+    
+    // Otherwise, get average of visible chunks
+    const visibleChunks = this.getVisibleChunks();
+    if (visibleChunks.length === 0) return 0;
+    
+    // Find the closest loaded chunk to camera
+    let closestChunk: ChunkData | null = null;
+    let closestDist = Infinity;
+    
+    for (const chunk of visibleChunks) {
+      const dist = Math.pow(chunk.coords.x - cameraChunk.x, 2) + Math.pow(chunk.coords.z - cameraChunk.z, 2);
+      if (dist < closestDist) {
+        closestDist = dist;
+        closestChunk = chunk;
+      }
+    }
+    
+    return closestChunk?.surfaceY ?? 0;
+  }
+
+  /**
+   * Returns the screen offset for the camera (for CHUNKING calculations).
+   * This is the base offset WITHOUT surface Y adjustment.
+   * Used for visibility calculations - should NOT include Y offset.
    */
   getCameraScreenOffset(): { x: number; y: number } {
     // Camera is in world coordinates (blocks)
@@ -123,6 +157,27 @@ export class ChunkManager {
     const screenX = (this.cameraX - this.cameraZ) * (TILE_WIDTH / 2);
     const screenY = (this.cameraX + this.cameraZ) * (TILE_HEIGHT / 2);
     return { x: -screenX, y: -screenY };
+  }
+
+  /**
+   * Returns the screen offset for RENDERING.
+   * 
+   * Backend now normalizes Y position with: y_final = (8*(global_x+global_z) - 16*k) - min_value*16
+   * This puts all chunks at the same base level, so no Y offset needed here.
+   */
+  getCameraRenderOffset(): { x: number; y: number } {
+    const baseOffset = this.getCameraScreenOffset();
+    
+    // Compensate for surface height normalization
+    // Backend normalizes to min_value, so we shift down by surfaceY * 16
+    const surfaceY = this.getAverageSurfaceY();
+    const yOffset = surfaceY*16;//surfaceY * 16; // 16 pixels per Y level (negative because high = rendered lower)
+    
+    return { x: baseOffset.x, y: baseOffset.y + yOffset };
+
+
+    // Backend handles Y normalization, so just return base offset
+    //return this.getCameraScreenOffset();
   }
 
   /**
@@ -266,7 +321,7 @@ export class ChunkManager {
 
     try {
       const response = await firstValueFrom(
-        this.dataService.getJSONData('', coords.x, coords.z, 62) //-60
+        this.dataService.getJSONData('', coords.x, coords.z, -60) //-60
       );
 
       if (!response?.data?.surface_blocks?.length) {
@@ -275,10 +330,12 @@ export class ChunkManager {
       }
 
       const tileData = response.data.surface_blocks as (string | number)[][];
+      const surfaceY = response.data.palette ?? 0; // Get surface height from API
 
       const chunkData: ChunkData = {
         coords,
         tileData,
+        surfaceY,
         chunk: null,
         lastAccessed: Date.now(),
         state: 'loaded'
