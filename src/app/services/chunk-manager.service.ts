@@ -35,9 +35,9 @@ const CHUNK_SIZE = 16;   // Un chunk = 16x16 blocs
 const CHUNK_PIXEL_WIDTH = CHUNK_SIZE * TILE_WIDTH;
 const CHUNK_PIXEL_HEIGHT = CHUNK_SIZE * TILE_HEIGHT;
 
-const MIN_ZOOM = 1.5;
+const MIN_ZOOM = 0.1;
 const MAX_ZOOM = 2.5;
-const MAX_CACHE_SIZE = 500;  // Increased for larger radius support
+const MAX_CACHE_SIZE = 2000;  // Increased for larger radius support
 const PRELOAD_RADIUS = 4;
 const MAX_CONCURRENT_LOADS = 6;  // Limite de requêtes API simultanées
 
@@ -51,10 +51,10 @@ const MAX_CONCURRENT_LOADS = 6;  // Limite de requêtes API simultanées
 export class ChunkManager {
   // Cache of loaded chunks
   private cache = new Map<string, ChunkData>();
-  
+
   // Chunks currently loading (to avoid duplicate requests)
   private loading = new Map<string, Promise<ChunkData | null>>();
-  
+
   // Chunks known to be non-existent (404)
   private missing = new Set<string>();
 
@@ -69,7 +69,7 @@ export class ChunkManager {
 
   // Zoom level
   private zoom = 1.0;
-  
+
   // Viewport dimensions
   private viewportWidth = 1920;
   private viewportHeight = 1080;
@@ -82,7 +82,7 @@ export class ChunkManager {
   private continuousLoadingAtlas: Atlas | null = null;
   private pendingLoads = new Set<string>();
 
-  constructor(private dataService: DataService) {}
+  constructor(private dataService: DataService) { }
 
   // ==========================================================================
   // COORDINATE CONVERSIONS
@@ -120,21 +120,21 @@ export class ChunkManager {
   getAverageSurfaceY(): number {
     const cameraChunk = this.worldToChunk(this.cameraX, this.cameraZ);
     const key = this.getChunkKey(cameraChunk);
-    
+
     // First try to get the chunk directly under camera
     const centerChunk = this.cache.get(key);
     if (centerChunk) {
       return centerChunk.surfaceY;
     }
-    
+
     // Otherwise, get average of visible chunks
     const visibleChunks = this.getVisibleChunks();
     if (visibleChunks.length === 0) return 0;
-    
+
     // Find the closest loaded chunk to camera
     let closestChunk: ChunkData | null = null;
     let closestDist = Infinity;
-    
+
     for (const chunk of visibleChunks) {
       const dist = Math.pow(chunk.coords.x - cameraChunk.x, 2) + Math.pow(chunk.coords.z - cameraChunk.z, 2);
       if (dist < closestDist) {
@@ -142,7 +142,7 @@ export class ChunkManager {
         closestChunk = chunk;
       }
     }
-    
+
     return closestChunk?.surfaceY ?? 0;
   }
 
@@ -167,12 +167,12 @@ export class ChunkManager {
    */
   getCameraRenderOffset(): { x: number; y: number } {
     const baseOffset = this.getCameraScreenOffset();
-    
+
     // Compensate for surface height normalization
     // Backend normalizes to min_value, so we shift down by surfaceY * 16
     const surfaceY = this.getAverageSurfaceY();
-    const yOffset = surfaceY*16;//surfaceY * 16; // 16 pixels per Y level (negative because high = rendered lower)
-    
+    const yOffset = surfaceY * 16;//surfaceY * 16; // 16 pixels per Y level (negative because high = rendered lower)
+
     return { x: baseOffset.x, y: baseOffset.y + yOffset };
 
 
@@ -219,35 +219,35 @@ export class ChunkManager {
   getVisibleChunkCoords(): ChunkCoords[] {
     // Viewport center in world coordinates
     const center = this.screenToWorld(this.viewportWidth / 2, this.viewportHeight / 2);
-    
+
     // Calculate visibility radius taking zoom into account
     // When zooming out (zoom < 1), we see more of the world
     // In iso, the visible diagonal is important
     const diagonalScreen = Math.sqrt(
-      this.viewportWidth * this.viewportWidth + 
+      this.viewportWidth * this.viewportWidth +
       this.viewportHeight * this.viewportHeight
     );
-    
+
     // Convert to world radius
     // Division by zoom: if zoom = 0.5, we see 2x more
     // Division by TILE_WIDTH/2 because it's the scale of iso projection
     const worldRadius = (diagonalScreen / 2) / ((TILE_WIDTH / 2) * this.zoom);
-    
+
     // Add margin for partially visible chunks
     const chunkRadius = Math.ceil(worldRadius / CHUNK_SIZE) + 1;
-    
+
     // Center in chunk coordinates
     const centerChunkX = Math.floor(center.worldX / CHUNK_SIZE);
     const centerChunkZ = Math.floor(center.worldZ / CHUNK_SIZE);
-    
+
     const chunks: ChunkCoords[] = [];
-    
+
     // Diamond shape for isometric (Manhattan distance)
     for (let x = centerChunkX - chunkRadius; x <= centerChunkX + chunkRadius; x++) {
       for (let z = centerChunkZ - chunkRadius; z <= centerChunkZ + chunkRadius; z++) {
         // Manhattan distance from center
         const dist = Math.abs(x - centerChunkX) + Math.abs(z - centerChunkZ);
-        
+
         // Keep only chunks within visibility diamond
         if (dist <= chunkRadius) {
           chunks.push({ x, z });
@@ -321,7 +321,7 @@ export class ChunkManager {
 
     try {
       const response = await firstValueFrom(
-        this.dataService.getJSONData('', coords.x, coords.z, -60) //-60
+        this.dataService.getChunkData(coords.x, coords.z, -60)
       );
 
       if (!response?.data?.surface_blocks?.length) {
@@ -365,7 +365,7 @@ export class ChunkManager {
   private isInPreloadRange(coords: ChunkCoords): boolean {
     const chunkCam = this.worldToChunk(this.cameraX, this.cameraZ);
     const dist = Math.max(Math.abs(coords.x - chunkCam.x), Math.abs(coords.z - chunkCam.z));
-    
+
     // Approximation: preload radius is based on visibility + margin
     // We consider preloading slightly further than visible area
     const visibleRadius = Math.ceil(this.viewportWidth / (CHUNK_SIZE * TILE_WIDTH * this.zoom));
@@ -381,12 +381,12 @@ export class ChunkManager {
   updateChunks(atlas: Atlas): void {
     // Store atlas for continuous loading
     this.continuousLoadingAtlas = atlas;
-    
+
     // Start continuous loading if not already active
     if (!this.continuousLoadingActive) {
       this.startContinuousLoading();
     }
-    
+
     // Also do immediate loading for responsiveness
     this.loadNextBatch();
   }
@@ -398,7 +398,7 @@ export class ChunkManager {
   private startContinuousLoading(): void {
     if (this.continuousLoadingActive) return;
     this.continuousLoadingActive = true;
-    
+
     this.continuousLoadingLoop();
   }
 
@@ -418,7 +418,7 @@ export class ChunkManager {
 
     // Check if there are chunks to load
     const chunksToLoad = this.getChunksNeedingLoad();
-    
+
     if (chunksToLoad.length > 0 && this.loading.size < MAX_CONCURRENT_LOADS) {
       this.loadNextBatch();
     }
@@ -436,7 +436,7 @@ export class ChunkManager {
   private getChunksNeedingLoad(): ChunkCoords[] {
     const visibleCoords = this.getVisibleChunkCoords();
     const preloadCoords = this.getPreloadChunkCoords();
-    
+
     const uniqueCoords = new Map<string, ChunkCoords>();
     visibleCoords.forEach(c => uniqueCoords.set(this.getChunkKey(c), c));
     preloadCoords.forEach(c => {
@@ -445,7 +445,7 @@ export class ChunkManager {
     });
 
     const allCoords = Array.from(uniqueCoords.values());
-    
+
     // Filter to only chunks that need loading
     return allCoords.filter(coords => {
       const key = this.getChunkKey(coords);
@@ -462,13 +462,13 @@ export class ChunkManager {
 
     const visibleCoords = this.getVisibleChunkCoords();
     const preloadCoords = this.getPreloadChunkCoords();
-    
+
     // Combine lists (visible prioritize)
     const uniqueCoords = new Map<string, ChunkCoords>();
     visibleCoords.forEach(c => uniqueCoords.set(this.getChunkKey(c), c));
     preloadCoords.forEach(c => {
-        const key = this.getChunkKey(c);
-        if (!uniqueCoords.has(key)) uniqueCoords.set(key, c);
+      const key = this.getChunkKey(c);
+      if (!uniqueCoords.has(key)) uniqueCoords.set(key, c);
     });
 
     const allCoords = Array.from(uniqueCoords.values());
@@ -479,14 +479,14 @@ export class ChunkManager {
       // Use Euclidean distance squared for better center prioritization
       const distA = Math.pow(a.x - cameraChunk.x, 2) + Math.pow(a.z - cameraChunk.z, 2);
       const distB = Math.pow(b.x - cameraChunk.x, 2) + Math.pow(b.z - cameraChunk.z, 2);
-      
+
       // Strong priority for visible chunks
       const isVisibleA = this.isVisible(a);
       const isVisibleB = this.isVisible(b);
-      
+
       if (isVisibleA && !isVisibleB) return -1;
       if (!isVisibleA && isVisibleB) return 1;
-      
+
       // For visible chunks, prioritize by distance from camera center
       // Chunks closest to camera center load first (concentric circles)
       return distA - distB;
@@ -528,42 +528,42 @@ export class ChunkManager {
    */
   private getPreloadChunkCoords(): ChunkCoords[] {
     const coords: ChunkCoords[] = [];
-    
+
     // Current position and predicted (0.5 seconds in future)
     const predictTime = 0.5; // seconds
     const predictedX = this.cameraX + this.cameraVelX * predictTime;
     const predictedZ = this.cameraZ + this.cameraVelZ * predictTime;
-    
+
     // Chunks for predicted position
     const predictedChunk = this.worldToChunk(predictedX, predictedZ);
-    
+
     // Adaptive preload radius based on speed
     const speed = Math.sqrt(this.cameraVelX * this.cameraVelX + this.cameraVelZ * this.cameraVelZ);
     const speedFactor = Math.min(2, 1 + speed / 100); // Faster speed = more preload
-    
+
     const visibleRadius = Math.ceil(this.viewportWidth / (CHUNK_SIZE * TILE_WIDTH * this.zoom));
     const radius = Math.ceil((visibleRadius + PRELOAD_RADIUS) * speedFactor);
-    
+
     // Elliptical shape in direction of movement
     const velNorm = Math.sqrt(this.cameraVelX * this.cameraVelX + this.cameraVelZ * this.cameraVelZ);
     const dirX = velNorm > 0.1 ? this.cameraVelX / velNorm : 0;
     const dirZ = velNorm > 0.1 ? this.cameraVelZ / velNorm : 0;
-    
+
     for (let dx = -radius; dx <= radius; dx++) {
       for (let dz = -radius; dz <= radius; dz++) {
         // Stretch preload in movement direction
         const stretch = 1 + Math.max(0, (dx * dirX + dz * dirZ) / radius) * speedFactor;
         const dist = Math.sqrt(dx * dx + dz * dz);
-        
+
         if (dist <= radius * stretch) {
-          coords.push({ 
-            x: predictedChunk.x + dx, 
-            z: predictedChunk.z + dz 
+          coords.push({
+            x: predictedChunk.x + dx,
+            z: predictedChunk.z + dz
           });
         }
       }
     }
-    
+
     return coords;
   }
 
@@ -656,7 +656,7 @@ export class ChunkManager {
     // Calculate how many to remove
     const toRemoveCount = this.cache.size - MAX_CACHE_SIZE;
     const toRemove = evictablEntries.slice(0, toRemoveCount);
-    
+
     for (const [key, data] of toRemove) {
       if (data.chunk) {
         data.chunk.destroy();
@@ -671,7 +671,7 @@ export class ChunkManager {
   clearCache(): void {
     // Stop continuous loading
     this.stopContinuousLoading();
-    
+
     for (const data of this.cache.values()) {
       if (data.chunk) {
         data.chunk.destroy();
@@ -698,14 +698,14 @@ export class ChunkManager {
       if (dt > 0 && dt < 1) { // Ignore large deltas
         this.cameraVelX = (x - this.cameraX) / dt;
         this.cameraVelZ = (z - this.cameraZ) / dt;
-        
+
         // Limit velocity to avoid extreme values
         const maxVel = 500; // blocks/second max
         this.cameraVelX = Math.max(-maxVel, Math.min(maxVel, this.cameraVelX));
         this.cameraVelZ = Math.max(-maxVel, Math.min(maxVel, this.cameraVelZ));
       }
     }
-    
+
     this.cameraX = x;
     this.cameraZ = z;
     this.lastCameraUpdate = now;
@@ -737,7 +737,7 @@ export class ChunkManager {
 
     // Move in opposite direction of drag
     this.moveCamera(-worldDX, -worldDZ);
-    
+
     // Refresh visible chunks' lastAccessed to protect them from eviction
     this.refreshVisibleChunksAccess();
   }
@@ -749,7 +749,7 @@ export class ChunkManager {
   refreshVisibleChunksAccess(): void {
     const now = Date.now();
     const visibleCoords = this.getVisibleChunkCoords();
-    
+
     for (const coords of visibleCoords) {
       const key = this.getChunkKey(coords);
       const chunkData = this.cache.get(key);
@@ -833,7 +833,7 @@ export class ChunkManager {
   getRadiusStatus(): { loaded: number; total: number; pending: number; complete: boolean } {
     const visibleCoords = this.getVisibleChunkCoords();
     const preloadCoords = this.getPreloadChunkCoords();
-    
+
     // Unique chunks in radius
     const uniqueCoords = new Map<string, ChunkCoords>();
     visibleCoords.forEach(c => uniqueCoords.set(this.getChunkKey(c), c));
