@@ -177,7 +177,7 @@ export class ChunkManager {
 
 
     // Backend handles Y normalization, so just return base offset
-    //return this.getCameraScreenOffset();
+
   }
 
   /**
