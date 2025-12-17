@@ -5,6 +5,7 @@ import { ApiResponse } from '../models/api-response.model';
 import { ChunkData } from '../models/chunk-data.model';
 import { ImageNom } from '../models/image-nom.model';
 import { SurfaceBlocks } from '../models/surface-blocks.model';
+import { environment } from '../config';
 
 @Injectable({
   providedIn: 'root'
@@ -12,12 +13,13 @@ import { SurfaceBlocks } from '../models/surface-blocks.model';
 export class DataService {
   private path: string;
 
+
   constructor(private http: HttpClient) {
-    this.path = 'http://localhost:8000/api/';
+    this.path = environment.apiUrl;
   }
 
-  getJSONData(name: string, x: number, y: number, z: number): Observable<ApiResponse<ChunkData>> {
-    return  this.http.get<ApiResponse<ChunkData>>(`http://localhost:8000/api/chunks/${x}/${y}/${z}?mode=isometric`); //`data/${name}.json`
+  getChunkData(chunkX: number, chunkZ: number, chunkH: number): Observable<ApiResponse<ChunkData>> {
+    return this.http.get<ApiResponse<ChunkData>>(`${this.path}/chunks/${chunkX}/${chunkZ}/${chunkH}?mode=isometric`);
   }
 
   getBlockJSON(name: string): Observable<any> {
@@ -29,20 +31,22 @@ export class DataService {
   }
 
   getNomTexture(name: string, biome: string, properties: string): Observable<ApiResponse<ImageNom>> {
-    return this.http.get<ApiResponse<ImageNom>>(`http://localhost:8000/api/resources/json?id=${name}&namespace=minecraft&properties=${properties}&biome=${biome}`);
-    //http://localhost:8000/api/resources/json?id=gold_block&namespace=minecraft&properties=%7B%7D&biome=biome
+    return this.http.get<ApiResponse<ImageNom>>(`${this.path}/resources/json?id=${name}&namespace=minecraft&properties=${properties}&biome=${biome}`);
   }
 
-  postDictBlocks(dict : {[key: string]: SurfaceBlocks[]; }): Observable<any>{
-    return this.http.post<ApiResponse<any>>("http://localhost:8000/api/resources/palette", dict);
+  postDictBlocks(dict: { [key: string]: SurfaceBlocks[]; }): Observable<any> {
+    return this.http.post<ApiResponse<any>>(`${this.path}/resources/palette`, dict);
   }
 
   uploadWorld(formData: FormData): Observable<any> {
-    return this.http.post(`${this.path}upload/world`, formData);
+    // Note: path already lacks trailing slash? environment.apiUrl usually has no trailing slash.
+    // constructor adds / to some paths?
+    // Let's normalize. 
+    return this.http.post(`${this.path}/upload/world`, formData);
   }
 
   checkWorldHealth(): Observable<{ world_loaded: boolean }> {
-    return this.http.get<{ world_loaded: boolean }>(`${this.path}worlds/health`);
+    return this.http.get<{ world_loaded: boolean }>(`${this.path}/worlds/health`);
   }
 
 
