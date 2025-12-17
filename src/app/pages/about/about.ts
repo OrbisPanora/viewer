@@ -17,28 +17,34 @@ interface TeamMember {
 export class AboutPage {
   teamMembers: TeamMember[] = [
     {
-      name: 'Alice Johnson',
-      role: 'Lead Developer',
-      bio: 'Full-stack developer with expertise in 3D graphics and game engine development.',
-      avatar: 'AJ'
+      name: 'Cyriaque Segerie',
+      role: 'Developer',
+      bio: 'Student at UCA, worked on front-end development, the library, and the DevOps part of the project.',
+      avatar: 'CS'
     },
     {
-      name: 'Bob Smith',
-      role: 'Frontend Engineer',
-      bio: 'Specialized in Angular and modern web technologies with a passion for user experience.',
-      avatar: 'BS'
+      name: 'Timothée Aubry',
+      role: 'Developer',
+      bio: 'Student at UCA, worked on front-end development, the library, and overall code quality for the project.',
+      avatar: 'TA'
     },
     {
-      name: 'Carol Williams',
-      role: 'Backend Engineer',
-      bio: 'Expert in data parsing and optimization, focusing on efficient file processing.',
-      avatar: 'CW'
+      name: 'Zayd Nahli',
+      role: 'Developer',
+      bio: 'Student at UCA, worked on back-end development, the library, and world rendering optimization for the project.',
+      avatar: 'ZN'
     },
     {
-      name: 'David Brown',
-      role: 'DevOps Engineer',
-      bio: 'Ensures smooth deployment and infrastructure management for optimal performance.',
-      avatar: 'DB'
+      name: 'Christophe Kene',
+      role: 'Developer',
+      bio: 'Student at UCA, worked on back-end development, the library, and textures for the world rendering part of the project.',
+      avatar: 'CK'
+    },
+    {
+      name: 'Simoni Khachidze',
+      role: 'Developer',
+      bio: 'Student at UCA, worked on back-end development, the library, and R&D for the visualizer engine of the project.',
+      avatar: 'SK'
     }
   ];
 }
