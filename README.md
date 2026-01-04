@@ -14,7 +14,7 @@ Alternatively, if you want to use the hosted API, you can change the base URI in
 ```typescript
 export const environment = {
     production: false,
-    apiUrl: 'http://localhost:8000/api'
+    apiUrl: 'http://localhost:8000'
 };
 ```
 

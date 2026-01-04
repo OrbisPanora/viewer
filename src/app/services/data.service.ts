@@ -15,7 +15,7 @@ export class DataService {
 
 
   constructor(private http: HttpClient) {
-    this.path = environment.apiUrl;
+    this.path = environment.apiUrl + '/api';
   }
 
   getChunkData(chunkX: number, chunkZ: number, chunkH: number): Observable<ApiResponse<ChunkData>> {
