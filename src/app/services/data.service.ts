@@ -5,17 +5,20 @@ import { ApiResponse } from '../models/api-response.model';
 import { ChunkData } from '../models/chunk-data.model';
 import { ImageNom } from '../models/image-nom.model';
 import { SurfaceBlocks } from '../models/surface-blocks.model';
-import { environment } from '../config';
+import { ApiConfigService } from './api-config.service';
 
 @Injectable({
   providedIn: 'root'
 })
 export class DataService {
-  private path: string;
 
+  constructor(
+    private http: HttpClient,
+    private apiConfig: ApiConfigService
+  ) {}
 
-  constructor(private http: HttpClient) {
-    this.path = environment.apiUrl + '/api';
+  private get path(): string {
+    return this.apiConfig.apiUrl + '/api';
   }
 
   getChunkData(chunkX: number, chunkZ: number, chunkH: number): Observable<ApiResponse<ChunkData>> {

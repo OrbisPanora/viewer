@@ -2,6 +2,7 @@ import { Component } from '@angular/core';
 import { Router } from '@angular/router';
 import { CommonModule } from '@angular/common';
 import { DataService } from '../../services/data.service';
+import { ApiConfigService, ApiMode } from '../../services/api-config.service';
 import { firstValueFrom } from 'rxjs';
 
 @Component({
@@ -14,14 +15,23 @@ import { firstValueFrom } from 'rxjs';
 export class HomePage {
   isDragOver = false;
   isUploading = false;
+  mode: ApiMode;
 
   // Default dimension for world upload
   private readonly DEFAULT_DIMENSION = 'overworld';
 
   constructor(
     private router: Router,
-    private dataService: DataService
-  ) {}
+    private dataService: DataService,
+    private apiConfig: ApiConfigService
+  ) {
+    this.mode = this.apiConfig.currentMode;
+  }
+
+  setMode(mode: ApiMode): void {
+    this.mode = mode;
+    this.apiConfig.setMode(mode);
+  }
 
   onDragOver(event: DragEvent): void {
     event.preventDefault();
