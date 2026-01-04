@@ -35,7 +35,7 @@ const CHUNK_SIZE = 16;   // Un chunk = 16x16 blocs
 const CHUNK_PIXEL_WIDTH = CHUNK_SIZE * TILE_WIDTH;
 const CHUNK_PIXEL_HEIGHT = CHUNK_SIZE * TILE_HEIGHT;
 
-const MIN_ZOOM = 1.5;
+const MIN_ZOOM = 0.5;
 const MAX_ZOOM = 2.5;
 const MAX_CACHE_SIZE = 500;  // Increased for larger radius support
 const PRELOAD_RADIUS = 4;
