@@ -1,4 +1,6 @@
 import { Component } from '@angular/core';
+import { DomSanitizer, SafeResourceUrl } from '@angular/platform-browser';
+import { ApiConfigService } from '../../services/api-config.service';
 
 @Component({
   selector: 'app-api',
@@ -6,4 +8,15 @@ import { Component } from '@angular/core';
   templateUrl: './api.html',
   styleUrl: './api.less'
 })
-export class ApiPage {}
+export class ApiPage {
+  get apiDocsUrl(): SafeResourceUrl {
+    return this.sanitizer.bypassSecurityTrustResourceUrl(
+      this.apiConfig.apiUrl + '/docs'
+    );
+  }
+
+  constructor(
+    private sanitizer: DomSanitizer,
+    private apiConfig: ApiConfigService
+  ) {}
+}

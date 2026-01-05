@@ -2,9 +2,33 @@
 
 This project was generated using [Angular CLI](https://github.com/angular/angular-cli) version 20.3.1.
 
+## Local API usage
+
+If you want, you can run the API in your local environment.  
+To do so, you can check this repository:
+https://codefirst.iut.uca.fr/gitlab/IUT_INF63/projets-etudiants/OrbisPanora/api 
+
+Then, follow the README instructions to start the local API server.
+
+**⚠️ Warning** \
+The hosted API may be slow or shut down due to administrative reasons. \
+If possible, it is recommended to run the API locally.
+
 ## Development server
 
-To start a local development server, run:
+To start a local development server, clone this repository with:
+
+```bash
+git clone git@codefirst.iut.uca.fr:IUT_INF63/projets-etudiants/OrbisPanora/web.git
+```
+
+Then install the dependencies with:
+
+```bash
+npm install
+```
+
+And run:
 
 ```bash
 ng serve

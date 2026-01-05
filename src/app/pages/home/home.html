@@ -3,6 +3,29 @@
     <h1>OrbisPanora</h1>
     <p class="subtitle">Upload your Minecraft archive (.zip) file to visualize</p>
 
+    <div class="mode-toggle">
+      <button 
+        class="mode-btn" 
+        [class.active]="mode === 'locale'" 
+        (click)="setMode('locale')">
+        LOCALE
+      </button>
+      <button 
+        class="mode-btn" 
+        [class.active]="mode === 'hosted'" 
+        (click)="setMode('hosted')">
+        HOSTED
+      </button>
+    </div>
+
+    <div *ngIf="mode === 'hosted'" class="hosted-warning">
+      <span class="warning-icon">⚠️</span>
+      <div class="warning-text">
+        <strong>Warning:</strong> The hosted API may be slow or shut down due to administrative reasons. 
+        If possible, it is recommended to run the API locally. Check <a href="https://codefirst.iut.uca.fr/gitlab/IUT_INF63/projets-etudiants/OrbisPanora/api" target="_blank" rel="noopener noreferrer">https://codefirst.iut.uca.fr/gitlab/IUT_INF63/projets-etudiants/OrbisPanora/api</a> for instructions.
+      </div>
+    </div>
+
     <div
       class="drop-zone"
       [class.drag-over]="isDragOver"
