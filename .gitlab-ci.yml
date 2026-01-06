@@ -40,6 +40,7 @@ build-web-image:
     DESTINATION_REGISTRY_IMAGE_VERSION: "latest"
   only:
     - main
+    - dev
   when: on_success
 
 push-web-image:
@@ -54,6 +55,7 @@ push-web-image:
     - build-web-image
   only:
     - main
+    - dev
   when: on_success
 
 deploy-web:
@@ -70,4 +72,5 @@ deploy-web:
         CONTAINER_CPU: 250m
     only:
       - main
+      - dev
     when: on_success
