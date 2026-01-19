@@ -200,8 +200,10 @@ export class HomePage {
     if (!this.uploadProgress) return 'Uploading...';
     
     switch (this.uploadProgress.status) {
+      case 'testing':
+        return 'Testing connection speed...';
       case 'initializing':
-        return 'Initializing upload...';
+        return `Initializing upload (chunk size: ${this.formatChunkSize(this.uploadProgress.chunkSize)})...`;
       case 'uploading':
         return `Uploading: ${this.uploadProgress.chunksUploaded}/${this.uploadProgress.totalChunks} chunks (${this.uploadProgress.percentage}%)`;
       case 'finalizing':
@@ -213,5 +215,15 @@ export class HomePage {
       default:
         return 'Uploading...';
     }
+  }
+
+  /**
+   * Format chunk size for display
+   */
+  private formatChunkSize(bytes?: number): string {
+    if (!bytes) return '?';
+    if (bytes < 1024) return bytes + ' B';
+    if (bytes < 1024 * 1024) return (bytes / 1024).toFixed(0) + ' KB';
+    return (bytes / (1024 * 1024)).toFixed(1) + ' MB';
   }
 }
