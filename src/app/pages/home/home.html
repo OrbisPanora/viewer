@@ -22,7 +22,16 @@
       <span class="warning-icon">⚠️</span>
       <div class="warning-text">
         <strong>Warning:</strong> The hosted API may be slow or shut down due to administrative reasons. 
-        If possible, it is recommended to run the API locally. Check <a href="https://codefirst.iut.uca.fr/gitlab/IUT_INF63/projets-etudiants/OrbisPanora/api" target="_blank" rel="noopener noreferrer">https://codefirst.iut.uca.fr/gitlab/IUT_INF63/projets-etudiants/OrbisPanora/api</a> for instructions.
+        Switch to <em>LOCALE</em> if <em>HOSTED</em> is not working.
+      </div>
+    </div>
+
+    <div *ngIf="mode === 'locale'" class="hosted-warning">
+      <span class="warning-icon">⚠️</span>
+      <div class="warning-text">
+        <strong>Warning:</strong> The local API is faster, but if your security settings prevent HTTPS-to-HTTP connections, you will not be able to use the website from the internet.
+        So, you will need the local API <a href="https://codefirst.iut.uca.fr/gitlab/IUT_INF63/projets-etudiants/OrbisPanora/api" target="_blank" rel="noopener noreferrer">https://codefirst.iut.uca.fr/gitlab/IUT_INF63/projets-etudiants/OrbisPanora/api</a>
+        and the local website <a href="https://codefirst.iut.uca.fr/gitlab/IUT_INF63/projets-etudiants/OrbisPanora/web" target="_blank" rel="noopener noreferrer">https://codefirst.iut.uca.fr/gitlab/IUT_INF63/projets-etudiants/OrbisPanora/web</a>.
       </div>
     </div>
 
