@@ -1,43 +1,23 @@
 stages:
-  - sonar
   - build
   - push
   - deploy
 
 include:
-    - project: 'IUT_INF63/generic-ci'
-      ref: 'main'
-      file:
-        - 'build/.docker-build.yml' 
-        - 'deploy/.docker-deploy.yml'
-
-sonarqube-check:
-  stage: sonar
-  image: 
-    name: sonarsource/sonar-scanner-cli:latest
-    entrypoint: [""]
-  variables:
-    SONAR_USER_HOME: "${CI_PROJECT_DIR}/.sonar"  
-    GIT_DEPTH: "0"  
-  cache:
-    key: "${CI_JOB_NAME}"
-    paths:
-      - .sonar/cache
-  script: 
-    - sonar-scanner
-  allow_failure: true
-  only:
-    - main
-    - dev
+  - project: 'IUT_INF63/generic-ci'
+    ref: 'main'
+    file:
+      - 'build/.docker-build.yml'
+      - 'deploy/.docker-deploy.yml'
 
 build-web-image:
   extends: .build-and-push-docker-image
   stage: build
-  variables: 
+  variables:
     DOCKERFILE_RELATIVE_PATH: ./Dockerfile.prod
     DOCKERFILE_CONTEXT_PATH: .
     DESTINATION_REGISTRY_IMAGE_NAME: $CI_REGISTRY_IMAGE/orbispanora-web
-    DESTINATION_REGISTRY_IMAGE_VERSION: "latest"
+    DESTINATION_REGISTRY_IMAGE_VERSION: 'latest'
   only:
     - main
     - dev
@@ -46,11 +26,11 @@ build-web-image:
 push-web-image:
   extends: .build-and-push-docker-image
   stage: push
-  variables: 
+  variables:
     DOCKERFILE_RELATIVE_PATH: ./Dockerfile.prod
     DOCKERFILE_CONTEXT_PATH: .
     DESTINATION_REGISTRY_IMAGE_NAME: $CI_REGISTRY_IMAGE/orbispanora-web
-    DESTINATION_REGISTRY_IMAGE_VERSION: "latest"
+    DESTINATION_REGISTRY_IMAGE_VERSION: 'latest'
   dependencies:
     - build-web-image
   only:
@@ -59,18 +39,18 @@ push-web-image:
   when: on_success
 
 deploy-web:
-    extends: .deploy-image
-    stage: deploy
-    dependencies:
-      - push-web-image
-    variables:
-        CONTAINER_NAME: orbispanora-web
-        CONTAINER_IMAGE_PATH: $CI_REGISTRY_IMAGE/orbispanora-web:latest
-        NAMESPACE_TOKEN: $KUBE_NAMESPACE_TOKEN
-        NAMESPACE_NAME: iut-inf63-projets-etudiants-orbispanora
-        CONTAINER_HTTP_PORT: 80
-        CONTAINER_CPU: 250m
-    only:
-      - main
-      - dev
-    when: on_success
+  extends: .deploy-image
+  stage: deploy
+  dependencies:
+    - push-web-image
+  variables:
+    CONTAINER_NAME: orbispanora-web
+    CONTAINER_IMAGE_PATH: $CI_REGISTRY_IMAGE/orbispanora-web:latest
+    NAMESPACE_TOKEN: $KUBE_NAMESPACE_TOKEN
+    NAMESPACE_NAME: iut-inf63-projets-etudiants-orbispanora
+    CONTAINER_HTTP_PORT: 80
+    CONTAINER_CPU: 250m
+  only:
+    - main
+    - dev
+  when: on_success
