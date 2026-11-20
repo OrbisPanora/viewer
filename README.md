@@ -23,15 +23,16 @@ Use a copy of a world you care about. The API only reads worlds, but a copy cost
 
 ## Scripts
 
-| Command             | Purpose                                                          |
-| ------------------- | ---------------------------------------------------------------- |
-| `npm run dev`       | Dev server with hot reload and the API proxy.                    |
-| `npm run build`     | Type-check, then build to `dist/`.                               |
-| `npm run preview`   | Serve `dist/` (port 4173), with the same proxy and headers.      |
-| `npm run typecheck` | `vue-tsc` only.                                                  |
-| `npm run lint`      | ESLint, including the rule that exports must have a doc comment. |
-| `npm run format`    | Prettier (`format:check` only reports).                          |
-| `npm test`          | Vitest unit and component tests.                                 |
+| Command                 | Purpose                                                                                                                                                   |
+| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`           | Dev server with hot reload and the API proxy.                                                                                                             |
+| `npm run build`         | Type-check, then build to `dist/`.                                                                                                                        |
+| `npm run preview`       | Serve `dist/` (port 4173), with the same proxy and headers.                                                                                               |
+| `npm run typecheck`     | `vue-tsc` only.                                                                                                                                           |
+| `npm run lint`          | ESLint, including the rule that exports must have a doc comment.                                                                                          |
+| `npm run format`        | Prettier (`format:check` only reports).                                                                                                                   |
+| `npm test`              | Vitest unit and component tests.                                                                                                                          |
+| `npm run test:coverage` | The same with coverage. CI fails below 80 % (statements, branches, functions, lines). `sceneRenderer.ts` and `atlas.ts` draw with WebGL and are excluded. |
 
 ## Configuration
 
@@ -118,21 +119,34 @@ drawn as glass and reported once in the console.
 - `npm audit --omit=dev` reports no vulnerabilities. `npm audit` reports 19 moderate ones, all
   in the lint and test toolchain (`minimatch`, `glob`, `js-beautify`) that is not shipped.
 
-## Later: deployment behind a reverse proxy
+## Deployment
 
-Not set up yet. When it is:
+The production image (`Dockerfile.prod`) serves the built files with an unprivileged nginx on
+port 8080 and sends the same security headers as `vite.config.ts`. It also forwards `/api`,
+`/docs`, `/redoc` and `/openapi.json` to the API, so the app and the API share one origin and
+the app needs no configuration. Set the API's address when starting the container:
 
-- Serve this app at `/` and the API at `/api` on the same host. The app then needs no
-  configuration, since it calls its own origin. `/docs` and `/redoc` must be routed to the API
-  too, or the API page links will not work.
-- Send the same security headers as `vite.config.ts` (`contentSecurityPolicy`) from the web
-  server; `nginx.conf` does not do it yet.
+```bash
+docker run -p 8080:8080 -e API_UPSTREAM=http://api:8000 ghcr.io/orbispanora/viewer:0.1.0
+```
+
+nginx resolves the host name of `API_UPSTREAM` when it starts, so the API has to be reachable
+by that name at that time. The default is `http://127.0.0.1:8000`.
+
+- Uploads go through the image in pieces of 5 MB; `client_max_body_size` is 20 MB because of that.
+  The size limit of a whole upload is set in the API (`ORBISPANORA_UPLOAD_MAX_SIZE_MB`) and in the
+  build of the app (`VITE_MAX_UPLOAD_MB`).
 - The API has no authentication: anyone who can reach it can upload a world and switch the
-  loaded one. Put access control in front of it (for example a proxy middleware) before
-  exposing it beyond your own machine or network.
+  loaded one. Put access control in front of it before exposing it beyond your own machine or
+  network.
 
 ## Docker
 
 `docker compose up` starts the dev server on `127.0.0.1:5173`, reaching an API on the host.
-`Dockerfile.prod` builds the static files and serves them with nginx; it is used by the CI
-image jobs in `.gitlab-ci.yml`.
+`Dockerfile.prod` is the production image described above. Releases are published to
+`ghcr.io/orbispanora/viewer` by the workflow in `.github/workflows/release.yaml` when a tag
+`vX.Y.Z` is pushed. The image is scanned with Trivy before it is pushed.
+
+## Licence
+
+PolyForm Noncommercial License 1.0.0, see `LICENSE`.

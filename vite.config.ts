@@ -107,6 +107,22 @@ export default defineConfig(({ mode, command }) => {
       environment: 'node',
       include: ['src/**/*.test.ts'],
       restoreMocks: true,
+      coverage: {
+        provider: 'v8',
+        // Every source file counts, including those no test imports.
+        include: ['src/**/*.{ts,vue}'],
+        exclude: [
+          'src/**/*.test.ts',
+          'src/test-utils.ts',
+          'src/env.d.ts',
+          // These two draw with WebGL through pixi.js, which the test environment does not
+          // have. They are checked by running the viewer.
+          'src/viewer/sceneRenderer.ts',
+          'src/viewer/atlas.ts',
+        ],
+        reporter: ['text', 'lcov'],
+        thresholds: { statements: 80, branches: 80, functions: 80, lines: 80 },
+      },
     },
   };
 });
