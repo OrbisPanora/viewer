@@ -12,6 +12,12 @@ RUN npm run build
 
 FROM nginxinc/nginx-unprivileged:alpine@sha256:b5047b9b76845eac124358373c6852377c52e4b05834a47647e955dd91cb8f1e
 
+# The Alpine packages of the pinned base image can be older than the security fixes. Trivy
+# fails the release on those, so they are upgraded when the image is built.
+USER root
+RUN apk upgrade --no-cache
+USER 101
+
 # Where /api, /docs, /redoc and /openapi.json are sent. Override it at run time with the address
 # of the API; nginx has to be able to resolve the host name when it starts.
 ENV API_UPSTREAM=http://127.0.0.1:8000
