@@ -1,21 +1,29 @@
-FROM node:20-alpine AS build
+# Production image: static files served by an unprivileged nginx on port 8080.
+# The base images are pinned by digest; Dependabot proposes new digests.
+FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5 AS build
 
 WORKDIR /app
 
-COPY package*.json ./
-RUN npm ci
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts
 
 COPY . .
-RUN npm run build:prod
+RUN npm run build
 
-FROM nginx:alpine
+FROM nginxinc/nginx-unprivileged:alpine@sha256:b5047b9b76845eac124358373c6852377c52e4b05834a47647e955dd91cb8f1e
 
-# Copier la configuration nginx
-COPY nginx.conf /etc/nginx/conf.d/default.conf
+# The Alpine packages of the pinned base image can be older than the security fixes. Trivy
+# fails the release on those, so they are upgraded when the image is built.
+USER root
+RUN apk upgrade --no-cache
+USER 101
 
-# Copier les fichiers buildés dans nginx
-COPY --from=build /app/dist/web/browser /usr/share/nginx/html
+# Where /api, /docs, /redoc and /openapi.json are sent. Override it at run time with the address
+# of the API; nginx has to be able to resolve the host name when it starts.
+ENV API_UPSTREAM=http://127.0.0.1:8000
 
-EXPOSE 80
+COPY nginx.conf /etc/nginx/templates/default.conf.template
+COPY security-headers.conf /etc/nginx/snippets/security-headers.conf
+COPY --from=build /app/dist /usr/share/nginx/html
 
-CMD ["nginx", "-g", "daemon off;"]
+EXPOSE 8080

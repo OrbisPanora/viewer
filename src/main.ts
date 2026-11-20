@@ -1,6 +1,10 @@
-import { bootstrapApplication } from '@angular/platform-browser';
-import { appConfig } from './app/app.config';
-import { App } from './app/app';
+/**
+ * Entry point: creates the Vue app with its store and router.
+ */
+import { createPinia } from 'pinia';
+import { createApp } from 'vue';
+import App from './App.vue';
+import { createAppRouter } from './router';
+import './assets/main.css';
 
-bootstrapApplication(App, appConfig)
-  .catch((err) => console.error(err));
+createApp(App).use(createPinia()).use(createAppRouter()).mount('#app');

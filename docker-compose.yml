@@ -1,21 +1,16 @@
+# Development only. The web app expects the API on the host; set VITE_DEV_API_TARGET to
+# where it listens (host.docker.internal reaches the host from the container).
 services:
   dev:
     build:
       context: .
       dockerfile: Dockerfile.dev
     ports:
-      - "4200:4200"
+      - '127.0.0.1:5173:5173'
+    environment:
+      VITE_DEV_API_TARGET: http://host.docker.internal:8000
+    extra_hosts:
+      - 'host.docker.internal:host-gateway'
     volumes:
       - .:/app
       - /app/node_modules
-    environment:
-      - NODE_ENV=development
-
-  prod:
-    build:
-      context: .
-      dockerfile: Dockerfile.prod
-    ports:
-      - "8080:80"
-    environment:
-      - NODE_ENV=production

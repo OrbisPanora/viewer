@@ -1,13 +1,17 @@
-FROM node:20-alpine
+# Development image: runs the Vite dev server with hot reload.
+FROM node:24-alpine@sha256:116b800c3754b440ee0aa3ed2f20f5bf3d99a554bfd9adeea09ea8017f6e85f5
 
 WORKDIR /app
 
-COPY package*.json ./
-
-RUN npm install
+COPY package.json package-lock.json ./
+RUN npm ci --ignore-scripts
 
 COPY . .
 
-EXPOSE 4200
+EXPOSE 5173
 
-CMD ["npm", "run", "start", "--", "--host", "0.0.0.0", "--poll", "2000"]
+# The dev server listens on loopback by default; inside a container it must listen on all
+# interfaces for the published port to work. Polling is needed for file changes to be seen
+# through a bind mount on some hosts.
+ENV CHOKIDAR_USEPOLLING=true
+CMD ["npm", "run", "dev", "--", "--host", "0.0.0.0"]
