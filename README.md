@@ -1,14 +1,21 @@
-# OrbisPanora web
+# OrbisPanora viewer
 
-Isometric viewer for Minecraft worlds. A Vue 3 single-page app that uploads a zipped world
-to the OrbisPanora API (`../api`) and draws the chunks it returns with pixi.js (WebGL).
+An isometric viewer for Minecraft Java worlds. A Vue 3 single-page app that uploads a zipped
+world to the OrbisPanora API and draws the chunks it returns with pixi.js (WebGL).
 
-## Requirements
+It is the third of three parts of OrbisPanora:
 
-- Node.js 22 or newer (24 is what the Dockerfiles use).
-- The API running locally. From `../api`: `uv run orbispanora run`.
+| Repository                                | Role                                      |
+| ----------------------------------------- | ----------------------------------------- |
+| [lib](https://github.com/OrbisPanora/lib) | Reads and writes the world files.         |
+| [api](https://github.com/OrbisPanora/api) | Serves chunks as JSON, using the library. |
+| **viewer** (this one)                     | Draws the chunks in the browser.          |
 
 ## Quick start
+
+You need Node.js 22 or newer (24 is what the Dockerfiles use) and the API running on
+`127.0.0.1:8000`. In a clone of the [api](https://github.com/OrbisPanora/api) repository:
+`uv run orbispanora run`.
 
 ```bash
 npm ci
@@ -20,6 +27,17 @@ opens. Pan by dragging or with the arrow keys (WASD and ZQSD also work), zoom wi
 wheel or `+` and `-`.
 
 Use a copy of a world you care about. The API only reads worlds, but a copy costs nothing.
+
+To run both parts as images instead, on a Docker network so that the API port is not published:
+
+```bash
+docker network create orbispanora
+docker run -d --name api --network orbispanora ghcr.io/orbispanora/api:0.1.0
+docker run -p 127.0.0.1:8080:8080 --network orbispanora -e API_UPSTREAM=http://api:8000 \
+  ghcr.io/orbispanora/viewer:0.1.0
+```
+
+and open `http://127.0.0.1:8080`. See [Deployment](#deployment) for the details.
 
 ## Scripts
 
