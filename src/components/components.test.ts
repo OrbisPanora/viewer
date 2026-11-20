@@ -89,6 +89,25 @@ describe('DebugOverlay', () => {
           cachedChunks: 30,
           loadingChunks: 2,
           missingChunks: 1,
+          frameMsP50: 16.7,
+          frameMsP95: 33.3,
+          workMsP50: 0.4,
+          workMsP95: 1.2,
+          wantedMsP95: 2.5,
+          buildMsP50: 3.1,
+          buildMsP95: 7.9,
+          tilemaps: 40,
+          visibleTilemaps: 25,
+          visibleTiles: 6400,
+          queuedChunks: 9,
+          startedRequests: 77,
+          abortedRequests: 5,
+          failedRequests: 3,
+          waitMsP50: 12,
+          waitMsP95: 80,
+          requestMsP50: 150,
+          requestMsP95: 400,
+          unknownBlocks: 4,
         },
       },
     });
@@ -96,6 +115,11 @@ describe('DebugOverlay', () => {
     expect(text).toContain('1.2, -5.0');
     expect(text).toContain('1.50');
     for (const value of ['12', '30', '2', '1']) expect(text).toContain(value);
+    expect(text).toContain('16.7 / 33.3');
+    expect(text).toContain('25 / 40');
+    expect(text).toContain('6400');
+    expect(text).toContain('77 / 5 / 3');
+    expect(text).toContain('150.0 / 400.0');
   });
 });
 

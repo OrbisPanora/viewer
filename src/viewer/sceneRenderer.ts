@@ -36,6 +36,9 @@ export class SceneRenderer {
   private readonly placeholderLayer = new Container();
   private readonly chunkLayer = new Container();
   private readonly tilemaps = new Map<string, Tilemap>();
+  private readonly tileCounts = new Map<string, number>();
+  private shownTilemaps = 0;
+  private shownTiles = 0;
   private readonly loadingMarks = new Map<string, Graphics>();
   private readonly missingMarks = new Map<string, Graphics>();
 
@@ -59,6 +62,33 @@ export class SceneRenderer {
   }
 
   /**
+   * Number of chunks that have a drawing, shown or hidden.
+   *
+   * @returns The count.
+   */
+  get tilemapCount(): number {
+    return this.tilemaps.size;
+  }
+
+  /**
+   * Number of chunk drawings shown at the last {@link setVisible}.
+   *
+   * @returns The count.
+   */
+  get visibleTilemapCount(): number {
+    return this.shownTilemaps;
+  }
+
+  /**
+   * Number of block sprites in the chunk drawings shown at the last {@link setVisible}.
+   *
+   * @returns The count.
+   */
+  get visibleTileCount(): number {
+    return this.shownTiles;
+  }
+
+  /**
    * Adds or replaces the drawing of a chunk.
    *
    * @param coords - The chunk.
@@ -72,6 +102,7 @@ export class SceneRenderer {
     for (const [name, x, y] of tiles) tilemap.tile(this.atlas.texture(name), x, y);
     tilemap.zIndex = coords.x + coords.z;
     this.tilemaps.set(key, tilemap);
+    this.tileCounts.set(key, tiles.length);
     this.chunkLayer.addChild(tilemap);
   }
 
@@ -87,6 +118,7 @@ export class SceneRenderer {
     // The atlas texture is shared by all chunks and must survive.
     tilemap.destroy({ children: true, texture: false, textureSource: false });
     this.tilemaps.delete(key);
+    this.tileCounts.delete(key);
   }
 
   /**
@@ -106,7 +138,18 @@ export class SceneRenderer {
    * @param visible - Keys of the chunks to show.
    */
   setVisible(visible: ReadonlySet<string>): void {
-    for (const [key, tilemap] of this.tilemaps) tilemap.visible = visible.has(key);
+    let shown = 0;
+    let tiles = 0;
+    for (const [key, tilemap] of this.tilemaps) {
+      const isShown = visible.has(key);
+      tilemap.visible = isShown;
+      if (isShown) {
+        shown++;
+        tiles += this.tileCounts.get(key) ?? 0;
+      }
+    }
+    this.shownTilemaps = shown;
+    this.shownTiles = tiles;
   }
 
   /**

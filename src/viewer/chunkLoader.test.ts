@@ -143,4 +143,52 @@ describe('ChunkLoader', () => {
     expect(calls).toHaveLength(1);
     expect(onLoaded).not.toHaveBeenCalled();
   });
+
+  describe('stats', () => {
+    it('counts queued chunks, started, aborted and failed requests', async () => {
+      const { calls, fetchChunk } = controlledFetch();
+      const loader = new ChunkLoader({ fetchChunk, onLoaded: vi.fn(), maxConcurrent: 1 });
+      loader.setWanted([
+        { x: 0, z: 0 },
+        { x: 1, z: 0 },
+      ]);
+      expect(loader.stats()).toMatchObject({ queued: 1, started: 1, aborted: 0, failed: 0 });
+
+      loader.setWanted([{ x: 1, z: 0 }]);
+      await vi.advanceTimersByTimeAsync(0);
+      expect(loader.stats()).toMatchObject({ queued: 0, started: 2, aborted: 1 });
+
+      calls[1]?.reject(new ApiError('network', 'down'));
+      await vi.advanceTimersByTimeAsync(0);
+      expect(loader.stats()).toMatchObject({ failed: 1, cooling: 1 });
+      loader.dispose();
+    });
+
+    it('measures the wait before a request starts and the duration of a request', async () => {
+      let now = 1000;
+      const { calls, fetchChunk } = controlledFetch();
+      const loader = new ChunkLoader({
+        fetchChunk,
+        onLoaded: vi.fn(),
+        maxConcurrent: 1,
+        now: () => now,
+      });
+      loader.setWanted([
+        { x: 0, z: 0 },
+        { x: 1, z: 0 },
+      ]);
+      now = 1300;
+      calls[0]?.resolve(PAYLOAD);
+      await vi.advanceTimersByTimeAsync(0);
+      // The second chunk was wanted at 1000 and started at 1300; the first took 300 ms.
+      now = 1500;
+      calls[1]?.resolve(null);
+      await vi.advanceTimersByTimeAsync(0);
+      const stats = loader.stats();
+      expect(stats.waitMsP95).toBe(300);
+      expect(stats.requestMsP95).toBe(300);
+      expect(stats.requestMsP50).toBe(300);
+      loader.dispose();
+    });
+  });
 });

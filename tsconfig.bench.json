@@ -1,0 +1,10 @@
+{
+  "extends": "./tsconfig.app.json",
+  "include": ["env.d.ts", "benchmarks/**/*.ts"],
+  "compilerOptions": {
+    "tsBuildInfoFile": "./node_modules/.tmp/tsconfig.bench.tsbuildinfo",
+    "types": ["node"],
+    "module": "esnext",
+    "target": "es2023"
+  }
+}

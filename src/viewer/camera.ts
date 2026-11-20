@@ -76,6 +76,19 @@ export class Camera {
   }
 
   /**
+   * Sets the zoom, keeping it within bounds.
+   *
+   * @param zoom - The wanted zoom factor.
+   */
+  setZoom(zoom: number): void {
+    const next = Math.min(MAX_ZOOM, Math.max(MIN_ZOOM, zoom));
+    if (next !== this.zoom) {
+      this.zoom = next;
+      this.version++;
+    }
+  }
+
+  /**
    * Records a new drawing area size.
    *
    * @param width - Width in pixels.

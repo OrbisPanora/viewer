@@ -10,6 +10,7 @@
  */
 import { ApiError } from '@/api/errors';
 import type { ChunkPayload } from '@/api/chunks';
+import { RollingWindow } from './metrics';
 import { chunkKey, type ChunkCoords } from './projection';
 
 /** Parallel requests when the caller gives no value. The API runs chunk extraction in worker processes, so a few at a time keeps it busy without queueing. */
@@ -35,12 +36,41 @@ export interface ChunkLoaderOptions {
   now?: () => number;
 }
 
+/** Values kept for the timing percentiles. */
+const TIMING_WINDOW = 200;
+
+/** Counters and timings of the loader, for the debug overlay and the benchmark. */
+export interface LoaderStats {
+  /** Wanted chunks that are not loaded, loading, missing or cooling down after a failure. */
+  readonly queued: number;
+  /** Requests started since the loader was created. */
+  readonly started: number;
+  /** Requests cancelled because the chunk stopped being wanted. */
+  readonly aborted: number;
+  /** Requests that failed for a reason other than cancellation. */
+  readonly failed: number;
+  /** Chunks waiting for their retry after a failure. */
+  readonly cooling: number;
+  /** Median and 95th percentile of the time a wanted chunk waited before its request started, in ms. */
+  readonly waitMsP50: number;
+  readonly waitMsP95: number;
+  /** Median and 95th percentile of the duration of a finished request, in ms. */
+  readonly requestMsP50: number;
+  readonly requestMsP95: number;
+}
+
 /** Loads chunks on demand and tracks what was loaded, is loading, is missing or failed. */
 export class ChunkLoader {
   private readonly inFlight = new Map<string, AbortController>();
   private readonly loaded = new Set<string>();
   private readonly missing = new Set<string>();
   private readonly failedAt = new Map<string, number>();
+  private readonly wantedSince = new Map<string, number>();
+  private readonly waitTimes = new RollingWindow(TIMING_WINDOW);
+  private readonly requestTimes = new RollingWindow(TIMING_WINDOW);
+  private startedCount = 0;
+  private abortedCount = 0;
+  private failedCount = 0;
   private wanted: ChunkCoords[] = [];
   private retryTimer: ReturnType<typeof setTimeout> | undefined;
   private disposed = false;
@@ -79,6 +109,30 @@ export class ChunkLoader {
   }
 
   /**
+   * Counters and timings since the loader was created.
+   *
+   * @returns A snapshot.
+   */
+  stats(): LoaderStats {
+    let queued = 0;
+    for (const coords of this.wanted) {
+      const key = chunkKey(coords);
+      if (!this.loaded.has(key) && !this.missing.has(key) && !this.inFlight.has(key)) queued++;
+    }
+    return {
+      queued,
+      started: this.startedCount,
+      aborted: this.abortedCount,
+      failed: this.failedCount,
+      cooling: this.failedAt.size,
+      waitMsP50: this.waitTimes.percentile(0.5),
+      waitMsP95: this.waitTimes.percentile(0.95),
+      requestMsP50: this.requestTimes.percentile(0.5),
+      requestMsP95: this.requestTimes.percentile(0.95),
+    };
+  }
+
+  /**
    * Tells whether a chunk is known to be absent from the world.
    *
    * @param key - Chunk key.
@@ -109,6 +163,15 @@ export class ChunkLoader {
     const wantedKeys = new Set(this.wanted.map(chunkKey));
     for (const [key, controller] of this.inFlight) {
       if (!wantedKeys.has(key)) controller.abort();
+    }
+    // Start the wait clock of chunks that just became wanted and stop it for those that left.
+    const now = this.now();
+    for (const key of this.wantedSince.keys()) {
+      if (!wantedKeys.has(key)) this.wantedSince.delete(key);
+    }
+    for (const key of wantedKeys) {
+      if (this.loaded.has(key) || this.missing.has(key) || this.inFlight.has(key)) continue;
+      if (!this.wantedSince.has(key)) this.wantedSince.set(key, now);
     }
     this.pump();
   }
@@ -170,9 +233,14 @@ export class ChunkLoader {
   private async fetch(coords: ChunkCoords, key: string): Promise<void> {
     const controller = new AbortController();
     this.inFlight.set(key, controller);
+    const startedAt = this.now();
+    this.startedCount++;
+    this.waitTimes.push(startedAt - (this.wantedSince.get(key) ?? startedAt));
+    this.wantedSince.delete(key);
     try {
       const payload = await this.options.fetchChunk(coords.x, coords.z, controller.signal);
       if (this.disposed) return;
+      this.requestTimes.push(this.now() - startedAt);
       this.failedAt.delete(key);
       if (payload === null) {
         this.missing.add(key);
@@ -185,8 +253,11 @@ export class ChunkLoader {
       if (this.disposed) return;
       // A cancelled request is not a failure: the chunk simply stopped being wanted.
       if (!(error instanceof ApiError && error.kind === 'aborted') && !controller.signal.aborted) {
+        this.failedCount++;
         this.failedAt.set(key, this.now());
         this.options.onError?.(coords, error);
+      } else {
+        this.abortedCount++;
       }
     } finally {
       this.inFlight.delete(key);

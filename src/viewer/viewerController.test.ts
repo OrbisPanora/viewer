@@ -40,7 +40,7 @@ vi.mock('pixi.js', () => ({
 vi.mock('./atlas', () => ({
   loadAtlas: async () => {
     if (fake.atlasFails) throw new Error('atlas missing');
-    return {};
+    return { unknownCount: () => 2 };
   },
 }));
 
@@ -52,6 +52,9 @@ vi.mock('./sceneRenderer', () => ({
     applyCamera = vi.fn();
     syncPlaceholders = vi.fn();
     destroy = vi.fn();
+    tilemapCount = 3;
+    visibleTilemapCount = 2;
+    visibleTileCount = 50;
     constructor() {
       fake.renderers.push(this as unknown as Record<string, ReturnType<typeof vi.fn>>);
     }
@@ -204,6 +207,82 @@ describe('ViewerController', () => {
     const last = stats.at(-1);
     expect(last?.zoom).toBeGreaterThan(zoomBefore);
     expect(last?.cameraX).not.toBe(0);
+    viewer.destroy();
+  });
+
+  it('reports frame, request and renderer numbers', async () => {
+    const stats: ViewerStats[] = [];
+    const viewer = await ViewerController.create({
+      container: document.createElement('div'),
+      startAt: { x: 0, z: 0 },
+      onStats: (value) => stats.push(value),
+    });
+    const now = vi.spyOn(performance, 'now');
+    now.mockReturnValue(1_000);
+    frame();
+    await settle();
+    now.mockReturnValue(1_020);
+    frame();
+    now.mockReturnValue(1_300);
+    frame();
+    const last = viewer.stats();
+    expect(last.frameMsP50).toBeGreaterThan(0);
+    expect(last.startedRequests).toBeGreaterThan(0);
+    expect(last.buildMsP95).toBeGreaterThanOrEqual(0);
+    expect([last.tilemaps, last.visibleTilemaps, last.visibleTiles, last.unknownBlocks]).toEqual([
+      3, 2, 50, 2,
+    ]);
+    viewer.destroy();
+  });
+
+  it('can be moved and zoomed from outside, and tells when it has settled', async () => {
+    const viewer = await ViewerController.create({
+      container: document.createElement('div'),
+      startAt: { x: 0, z: 0 },
+    });
+    frame();
+    expect(viewer.isSettled()).toBe(false);
+    await settle();
+    // Every request resolved and the loader asked for more chunks until none were left.
+    for (let i = 0; i < 40 && !viewer.isSettled(); i++) {
+      frame();
+      await settle();
+    }
+    expect(viewer.isSettled()).toBe(true);
+    viewer.moveCameraTo(4_000, 4_000);
+    viewer.setCameraZoom(2);
+    frame();
+    const moved = viewer.stats();
+    expect(moved.cameraX).toBe(4_000);
+    expect(moved.zoom).toBe(2);
+    expect(viewer.isSettled()).toBe(false);
+    viewer.destroy();
+  });
+
+  it('records frames only while asked to', async () => {
+    const viewer = await ViewerController.create({
+      container: document.createElement('div'),
+      startAt: { x: 0, z: 0 },
+    });
+    const now = vi.spyOn(performance, 'now');
+    now.mockReturnValue(1_000);
+    frame();
+    expect(viewer.takeFrameLog().frames).toEqual([]);
+    viewer.recordFrames(true);
+    now.mockReturnValue(1_016);
+    frame();
+    viewer.moveCameraTo(100, 100);
+    now.mockReturnValue(1_033);
+    frame();
+    const log = viewer.takeFrameLog();
+    expect(log.frames).toHaveLength(2);
+    expect(log.work).toHaveLength(2);
+    expect(log.wanted).toHaveLength(1);
+    expect(viewer.takeFrameLog().frames).toEqual([]);
+    viewer.recordFrames(false);
+    now.mockReturnValue(1_050);
+    frame();
+    expect(viewer.takeFrameLog().frames).toEqual([]);
     viewer.destroy();
   });
 

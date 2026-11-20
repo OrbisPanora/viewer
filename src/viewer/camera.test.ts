@@ -44,4 +44,17 @@ describe('Camera', () => {
     camera.resize(0, -5);
     expect(camera.viewport).toEqual({ width: 1, height: 1 });
   });
+
+  it('sets the zoom within its bounds and counts a change only when the zoom moves', () => {
+    const camera = new Camera();
+    const version = camera.version;
+    camera.setZoom(100);
+    expect(camera.zoom).toBe(MAX_ZOOM);
+    camera.setZoom(0.0001);
+    expect(camera.zoom).toBe(MIN_ZOOM);
+    const changed = camera.version;
+    camera.setZoom(MIN_ZOOM);
+    expect(camera.version).toBe(changed);
+    expect(changed).toBeGreaterThan(version);
+  });
 });

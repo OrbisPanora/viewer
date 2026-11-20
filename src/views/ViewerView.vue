@@ -71,8 +71,16 @@ onMounted(async () => {
         if (showDebug.value) stats.value = s;
       },
     });
-    if (unmounted) created.destroy();
-    else viewer = created;
+    if (unmounted) {
+      created.destroy();
+    } else {
+      viewer = created;
+      if (import.meta.env.DEV) {
+        // Development only: lets benchmarks/run.ts drive the viewer. Not in the build.
+        const { installBenchHook } = await import('@/viewer/benchHook');
+        installBenchHook(created);
+      }
+    }
   } catch (error) {
     console.error('Viewer failed to start', error);
     problem.value = {

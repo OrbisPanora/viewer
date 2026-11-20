@@ -45,3 +45,6 @@ Thumbs.db
 # Local environment overrides
 .env.local
 .env.*.local
+
+# Benchmark results (machine-specific)
+/benchmarks/results/

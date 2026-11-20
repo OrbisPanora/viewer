@@ -8,6 +8,16 @@ defineProps<{
   /** The latest statistics, or `null` before the first report. */
   stats: ViewerStats | null;
 }>();
+
+/**
+ * Formats a duration in milliseconds.
+ *
+ * @param value - Milliseconds.
+ * @returns The value with one decimal.
+ */
+function ms(value: number): string {
+  return value.toFixed(1);
+}
 </script>
 
 <template>
@@ -24,6 +34,28 @@ defineProps<{
     <dd>{{ stats.loadingChunks }}</dd>
     <dt>Missing</dt>
     <dd>{{ stats.missingChunks }}</dd>
+    <dt>Frame ms (p50 / p95)</dt>
+    <dd>{{ ms(stats.frameMsP50) }} / {{ ms(stats.frameMsP95) }}</dd>
+    <dt>Own code ms (p50 / p95)</dt>
+    <dd>{{ ms(stats.workMsP50) }} / {{ ms(stats.workMsP95) }}</dd>
+    <dt>Wanted update ms (p95)</dt>
+    <dd>{{ ms(stats.wantedMsP95) }}</dd>
+    <dt>Chunk build ms (p50 / p95)</dt>
+    <dd>{{ ms(stats.buildMsP50) }} / {{ ms(stats.buildMsP95) }}</dd>
+    <dt>Tilemaps (shown / all)</dt>
+    <dd>{{ stats.visibleTilemaps }} / {{ stats.tilemaps }}</dd>
+    <dt>Tiles shown</dt>
+    <dd>{{ stats.visibleTiles }}</dd>
+    <dt>Queued</dt>
+    <dd>{{ stats.queuedChunks }}</dd>
+    <dt>Requests (started / aborted / failed)</dt>
+    <dd>{{ stats.startedRequests }} / {{ stats.abortedRequests }} / {{ stats.failedRequests }}</dd>
+    <dt>Wait ms (p50 / p95)</dt>
+    <dd>{{ ms(stats.waitMsP50) }} / {{ ms(stats.waitMsP95) }}</dd>
+    <dt>Request ms (p50 / p95)</dt>
+    <dd>{{ ms(stats.requestMsP50) }} / {{ ms(stats.requestMsP95) }}</dd>
+    <dt>Unknown blocks</dt>
+    <dd>{{ stats.unknownBlocks }}</dd>
   </dl>
 </template>
 

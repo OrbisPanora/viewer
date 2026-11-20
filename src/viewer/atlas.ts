@@ -18,6 +18,12 @@ export interface Atlas {
    * @returns The sprite, or {@link FALLBACK_FRAME} when unknown. Never throws on a bad name.
    */
   texture(name: string): Texture;
+  /**
+   * Number of different block names that had no sprite so far.
+   *
+   * @returns The count.
+   */
+  unknownCount(): number;
 }
 
 /** Names already reported as unknown, so each is logged once and not once per tile. */
@@ -49,5 +55,6 @@ export async function loadAtlas(url = `${import.meta.env.BASE_URL}iso_cube.json`
       }
       return fallback;
     },
+    unknownCount: () => reportedUnknown.size,
   };
 }

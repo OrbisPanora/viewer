@@ -5,10 +5,11 @@
 import 'pixi.js/unsafe-eval';
 import { Application } from 'pixi.js';
 import { fetchChunk, type ChunkPayload } from '@/api/chunks';
-import { loadAtlas } from './atlas';
+import { loadAtlas, type Atlas } from './atlas';
 import { Camera } from './camera';
 import { ChunkCache } from './chunkCache';
 import { ChunkLoader } from './chunkLoader';
+import { RollingWindow } from './metrics';
 import { attachInput } from './inputController';
 import {
   chunkCenter,
@@ -31,7 +32,17 @@ export const PRELOAD_MARGIN_CHUNKS = 2;
 /** How often statistics are reported, in milliseconds. */
 const STATS_INTERVAL_MS = 250;
 
-/** Numbers shown in the debug overlay. */
+/** Frames kept for the frame time percentiles: about two seconds at 60 frames per second. */
+const FRAME_WINDOW = 120;
+/** Other timings (camera updates, chunk builds) keep this many values. */
+const EVENT_WINDOW = 100;
+
+/**
+ * Numbers shown in the debug overlay. Times are in milliseconds. "Frame" is the time between
+ * two frames; "work" is the time spent in the viewer's own per-frame code (camera, culling,
+ * placeholders), which runs before pixi draws. A frame that is much longer than its work was
+ * spent drawing or idle.
+ */
 export interface ViewerStats {
   readonly cameraX: number;
   readonly cameraZ: number;
@@ -40,6 +51,43 @@ export interface ViewerStats {
   readonly cachedChunks: number;
   readonly loadingChunks: number;
   readonly missingChunks: number;
+  readonly frameMsP50: number;
+  readonly frameMsP95: number;
+  readonly workMsP50: number;
+  readonly workMsP95: number;
+  /** Time of {@link ViewerController} recomputing the wanted chunks after a camera change. */
+  readonly wantedMsP95: number;
+  /** Time to build the drawing of a chunk that arrived. */
+  readonly buildMsP50: number;
+  readonly buildMsP95: number;
+  readonly tilemaps: number;
+  readonly visibleTilemaps: number;
+  readonly visibleTiles: number;
+  /** Wanted chunks with no request running. */
+  readonly queuedChunks: number;
+  readonly startedRequests: number;
+  readonly abortedRequests: number;
+  readonly failedRequests: number;
+  /** Wait of a wanted chunk before its request started. */
+  readonly waitMsP50: number;
+  readonly waitMsP95: number;
+  /** Duration of a finished request, from sending to the decoded chunk. */
+  readonly requestMsP50: number;
+  readonly requestMsP95: number;
+  /** Different block names drawn as the placeholder because the atlas has no sprite. */
+  readonly unknownBlocks: number;
+}
+
+/** Per-frame measurements recorded between {@link ViewerController.recordFrames} calls. */
+export interface FrameLog {
+  /** Time between consecutive frames, in ms. */
+  readonly frames: number[];
+  /** Time in the viewer's own per-frame code, in ms. */
+  readonly work: number[];
+  /** Time of each recomputation of the wanted chunks, in ms. */
+  readonly wanted: number[];
+  /** Time to build each arriving chunk, in ms. */
+  readonly builds: number[];
 }
 
 /** Options for {@link ViewerController.create}. */
@@ -71,6 +119,13 @@ export class ViewerController {
   private visibleList: ChunkCoords[] = [];
   private needsCentering: boolean;
   private lastStatsAt = 0;
+  private lastFrameAt = 0;
+  private atlas: Atlas | undefined;
+  private readonly frameTimes = new RollingWindow(FRAME_WINDOW);
+  private readonly workTimes = new RollingWindow(FRAME_WINDOW);
+  private readonly wantedTimes = new RollingWindow(EVENT_WINDOW);
+  private readonly buildTimes = new RollingWindow(EVENT_WINDOW);
+  private log: FrameLog | null = null;
 
   private constructor(
     private readonly app: Application,
@@ -112,6 +167,7 @@ export class ViewerController {
     try {
       const atlas = await loadAtlas();
       const viewer = new ViewerController(app, options, new SceneRenderer(app, atlas));
+      viewer.atlas = atlas;
       viewer.start();
       return viewer;
     } catch (error) {
@@ -164,6 +220,14 @@ export class ViewerController {
 
   /** Runs once per frame: updates what is wanted when the camera moved, then draws. */
   private frame(): void {
+    const frameStart = performance.now();
+    if (this.lastFrameAt > 0) {
+      const interval = frameStart - this.lastFrameAt;
+      this.frameTimes.push(interval);
+      this.log?.frames.push(interval);
+    }
+    this.lastFrameAt = frameStart;
+
     if (this.camera.version !== this.lastCameraVersion) {
       this.lastCameraVersion = this.camera.version;
       this.updateWanted();
@@ -178,6 +242,9 @@ export class ViewerController {
     );
 
     const now = performance.now();
+    const work = now - frameStart;
+    this.workTimes.push(work);
+    this.log?.work.push(work);
     if (this.options.onStats && now - this.lastStatsAt >= STATS_INTERVAL_MS) {
       this.lastStatsAt = now;
       this.options.onStats(this.stats());
@@ -186,6 +253,7 @@ export class ViewerController {
 
   /** Recomputes the visible chunks, asks the loader for them and trims the cache. */
   private updateWanted(): void {
+    const started = performance.now();
     const { camera } = this;
     this.visibleList = visibleChunks(camera.position, camera.zoom, camera.viewport);
     this.visibleKeys = new Set(this.visibleList.map(chunkKey));
@@ -202,6 +270,10 @@ export class ViewerController {
     const keep = new Set(withMargin.map(chunkKey));
     for (const key of this.visibleKeys) this.cache.get(key);
     this.cache.evict(keep);
+
+    const elapsed = performance.now() - started;
+    this.wantedTimes.push(elapsed);
+    this.log?.wanted.push(elapsed);
   }
 
   /**
@@ -211,8 +283,12 @@ export class ViewerController {
    * @param payload - Its content.
    */
   private handleLoaded(coords: ChunkCoords, payload: ChunkPayload): void {
+    const started = performance.now();
     this.renderer.setChunk(coords, payload.tiles);
     this.cache.set(chunkKey(coords), { surfaceY: payload.surfaceY });
+    const elapsed = performance.now() - started;
+    this.buildTimes.push(elapsed);
+    this.log?.builds.push(elapsed);
 
     if (this.needsCentering) {
       // The world may not contain the origin; start over the first terrain that exists.
@@ -253,7 +329,8 @@ export class ViewerController {
    *
    * @returns The current statistics.
    */
-  private stats(): ViewerStats {
+  stats(): ViewerStats {
+    const loader = this.loader.stats();
     return {
       cameraX: this.camera.x,
       cameraZ: this.camera.z,
@@ -262,6 +339,78 @@ export class ViewerController {
       cachedChunks: this.cache.size,
       loadingChunks: this.loader.pending,
       missingChunks: this.loader.missingCount,
+      frameMsP50: this.frameTimes.percentile(0.5),
+      frameMsP95: this.frameTimes.percentile(0.95),
+      workMsP50: this.workTimes.percentile(0.5),
+      workMsP95: this.workTimes.percentile(0.95),
+      wantedMsP95: this.wantedTimes.percentile(0.95),
+      buildMsP50: this.buildTimes.percentile(0.5),
+      buildMsP95: this.buildTimes.percentile(0.95),
+      tilemaps: this.renderer.tilemapCount,
+      visibleTilemaps: this.renderer.visibleTilemapCount,
+      visibleTiles: this.renderer.visibleTileCount,
+      queuedChunks: loader.queued,
+      startedRequests: loader.started,
+      abortedRequests: loader.aborted,
+      failedRequests: loader.failed,
+      waitMsP50: loader.waitMsP50,
+      waitMsP95: loader.waitMsP95,
+      requestMsP50: loader.requestMsP50,
+      requestMsP95: loader.requestMsP95,
+      unknownBlocks: this.atlas?.unknownCount() ?? 0,
     };
+  }
+
+  /**
+   * Moves the camera, as the benchmark does. The viewer then loads what is around the new position.
+   *
+   * @param x - Block X.
+   * @param z - Block Z.
+   */
+  moveCameraTo(x: number, z: number): void {
+    this.needsCentering = false;
+    this.camera.moveTo(x, z);
+  }
+
+  /**
+   * Sets the zoom, as the benchmark does.
+   *
+   * @param zoom - Zoom factor, limited to the camera's range.
+   */
+  setCameraZoom(zoom: number): void {
+    this.camera.setZoom(zoom);
+  }
+
+  /**
+   * Tells whether every chunk on screen is drawn or known to be absent and no request runs.
+   *
+   * @returns `true` when nothing more will appear without the camera moving.
+   */
+  isSettled(): boolean {
+    if (this.loader.pending > 0) return false;
+    return this.visibleList.every((c) => {
+      const key = chunkKey(c);
+      return this.cache.peek(key) !== undefined || this.loader.isMissing(key);
+    });
+  }
+
+  /**
+   * Starts or stops recording every frame, camera update and chunk build.
+   *
+   * @param enabled - `true` starts with an empty log; `false` stops and discards it.
+   */
+  recordFrames(enabled: boolean): void {
+    this.log = enabled ? { frames: [], work: [], wanted: [], builds: [] } : null;
+  }
+
+  /**
+   * Returns what was recorded since {@link recordFrames} and empties the log.
+   *
+   * @returns The measurements, empty if recording is off.
+   */
+  takeFrameLog(): FrameLog {
+    const taken = this.log ?? { frames: [], work: [], wanted: [], builds: [] };
+    if (this.log) this.log = { frames: [], work: [], wanted: [], builds: [] };
+    return taken;
   }
 }

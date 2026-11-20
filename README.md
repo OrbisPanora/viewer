@@ -101,7 +101,9 @@ src/
 │   ├── sceneRenderer.ts     pixi tilemaps and placeholders
 │   ├── inputController.ts   pointer, wheel and keyboard
 │   ├── atlas.ts             block sprite sheet
-│   └── viewerController.ts  connects the pieces above
+│   ├── viewerController.ts  connects the pieces above
+│   ├── metrics.ts           rolling percentiles for the debug overlay
+│   └── benchHook.ts         dev-only hook used by benchmarks/run.ts
 ├── stores/                  Pinia: world status, upload state machine
 ├── components/, views/      Vue UI
 └── test-utils.ts            fetch stub for tests
@@ -122,6 +124,30 @@ drawn as glass and reported once in the console.
    from `guards.ts` so an unexpected answer becomes an `ApiError` and not a crash.
 2. Write its test with `stubFetch` from `src/test-utils.ts`.
 3. Call it from a store or component, and show `error.message` as text.
+
+## Performance measurements
+
+The **Debug** checkbox on the map shows frame times, the time spent in the viewer's own
+code, chunk build times, request waits and durations, and the counts of tilemaps, tiles and
+requests (started, aborted, failed).
+
+`benchmarks/run.ts` drives the map in Playwright's Chromium along a fixed camera path and
+writes a JSON file (ignored by git) with frame times, long tasks, per-request timings
+(including the API's `Server-Timing` phases), JavaScript heap and CPU time per browser process. It
+needs the development server, because the hook it uses (`window.__orbisBench`) is not in the
+production build.
+
+```bash
+npx playwright install chromium     # once
+# start the API on a world (see its README) and `npm run dev`, then:
+node benchmarks/run.ts --scenario pan --label small --world /path/to/world --server-pid <API pid>
+node benchmarks/compare.ts benchmarks/results/<before>.json benchmarks/results/<after>.json
+```
+
+Scenarios: `pan` (50 chunks at zoom 1), `zoomout` (minimum zoom, then 50 chunks) and `travel`
+(`--minutes` of long straight runs, sampling memory every 10 s). Use `--headless` on a machine
+without a display; the results then include software rendering. `--world` only counts the
+region files and their size for the labels in the result file.
 
 ## Security
 
