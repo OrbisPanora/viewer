@@ -5,9 +5,12 @@
  *
  *   node benchmarks/run.ts --scenario pan --label small --world /path/to/world --server-pid 12345
  *
+ * `--start=X,Z` is the chunk to start over (default: where the viewer starts, over the first region the API
+ * lists). Write it with an equals sign: a negative X would otherwise look like another option.
  * `--world` is only used to record the number and size of the region files; its content is never read.
  * `--server-pid` is the API's process id, to record the memory of the API and its workers (Linux).
- * The browser is Playwright's Chromium (`npx playwright install chromium` once). *
+ * The browser is Playwright's Chromium (`npx playwright install chromium` once).
+ *
  * Scenarios (see --help for the options):
  *   pan      Pan 50 chunks at zoom 1. Run it on a small and a large world and compare the two files.
  *   travel   Pan for several minutes along long straight lines and back. Shows memory growth.
@@ -456,13 +459,14 @@ async function main(): Promise<number> {
       minutes: { type: 'string', default: '5' },
       'server-pid': { type: 'string' },
       world: { type: 'string' },
+      start: { type: 'string' },
       out: { type: 'string', default: path.join(import.meta.dirname, 'results') },
       help: { type: 'boolean', default: false },
     },
   });
   if (values.help) {
     console.log(
-      'Options: --url --scenario pan|travel|zoomout|all --label NAME --headless --speed CHUNKS_PER_S --minutes N --server-pid PID --world DIR --out DIR',
+      'Options: --url --scenario pan|travel|zoomout|all --label NAME --headless --speed CHUNKS_PER_S --minutes N --server-pid PID --world DIR --start=X,Z --out DIR',
     );
     return 0;
   }
@@ -503,14 +507,40 @@ async function main(): Promise<number> {
 
     await page.goto(`${options.url}/viewer`);
     try {
-      await page.waitForFunction(() => window.__orbisBench !== undefined, undefined, {
-        timeout: 60_000,
-      });
+      try {
+        await page.waitForFunction(() => window.__orbisBench !== undefined, undefined, {
+          timeout: 20_000,
+        });
+      } catch {
+        // A freshly started dev server optimises its dependencies on first use and answers
+        // the first page load with an error. A second load works.
+        await page.reload();
+        await page.waitForFunction(() => window.__orbisBench !== undefined, undefined, {
+          timeout: 60_000,
+        });
+      }
     } catch {
       console.error(
         'The viewer did not start. Is a world loaded in the API, and is this `npm run dev`?',
       );
       return 1;
+    }
+    if (values.start) {
+      const [chunkX, chunkZ] = values.start.split(',').map(Number);
+      if (
+        chunkX === undefined ||
+        chunkZ === undefined ||
+        Number.isNaN(chunkX) ||
+        Number.isNaN(chunkZ)
+      ) {
+        console.error('--start must be two chunk coordinates, for example --start=12,-3');
+        return 2;
+      }
+      await page.evaluate(
+        ({ x, z, blocks }) =>
+          window.__orbisBench?.moveTo(x * blocks + blocks / 2, z * blocks + blocks / 2),
+        { x: chunkX, z: chunkZ, blocks: BLOCKS_PER_CHUNK },
+      );
     }
     const initial = await settle(page);
 

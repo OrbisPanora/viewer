@@ -140,13 +140,13 @@ production build.
 ```bash
 npx playwright install chromium     # once
 # start the API on a world (see its README) and `npm run dev`, then:
-node benchmarks/run.ts --scenario pan --label small --world /path/to/world --server-pid <API pid>
+node benchmarks/run.ts --scenario pan --label small --world /path/to/world --start=12,-3 --server-pid <API pid>
 node benchmarks/compare.ts benchmarks/results/<before>.json benchmarks/results/<after>.json
 ```
 
 Scenarios: `pan` (50 chunks at zoom 1), `zoomout` (minimum zoom, then 50 chunks) and `travel`
 (`--minutes` of long straight runs, sampling memory every 10 s). Use `--headless` on a machine
-without a display; the results then include software rendering. `--world` only counts the
+without a display; the results then include software rendering. `--start=X,Z` is the chunk to begin over (by default the viewer's own start). `--world` only counts the
 region files and their size for the labels in the result file.
 
 ## Security
