@@ -3,7 +3,16 @@ import { ApiError } from '@/api/errors';
 import type { ChunkPayload } from '@/api/chunks';
 import { ChunkLoader, type ChunkLoaderOptions } from './chunkLoader';
 
-const PAYLOAD: ChunkPayload = { tiles: [['a.webp', 0, 0]], surfaceY: 1 };
+const PAYLOAD: ChunkPayload = {
+  blocks: {
+    palette: ['minecraft:a'],
+    x: Uint8Array.of(0),
+    y: Int16Array.of(0),
+    z: Uint8Array.of(0),
+    block: Uint16Array.of(0),
+  },
+  surfaceY: 1,
+};
 
 /** A fetch whose calls the test settles by hand. */
 function controlledFetch() {

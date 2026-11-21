@@ -1,11 +1,13 @@
 /**
  * Isometric projection and chunk geometry.
  *
- * World coordinates are Minecraft block coordinates (`x` east, `z` south). The API places
- * every block on screen with the formulas below, so these constants and functions must
- * stay equal to the API's: `screen.x = (x - z) * TILE_WIDTH / 2`, `screen.y = (x + z) * TILE_HEIGHT / 2`.
- * This module has no dependency on Vue or pixi.js so that it can be unit tested.
+ * World coordinates are Minecraft block coordinates (`x` east, `z` south). A block at world
+ * position `(x, y, z)` is drawn at `screen.x = (x - z) * TILE_WIDTH / 2` and
+ * `screen.y = (x + z) * TILE_HEIGHT / 2 - y * LEVEL_HEIGHT`. The API sends block positions,
+ * and {@link projectBlocks} applies this to a chunk. This module has no dependency on Vue or
+ * pixi.js so that it can be unit tested.
  */
+import type { ChunkBlocks, Tile } from '@/api/chunks';
 
 /** Width of one block's sprite, in pixels. */
 export const TILE_WIDTH = 32;
@@ -156,4 +158,38 @@ export function sortByDistance(chunks: readonly ChunkCoords[], around: WorldPoin
   const origin = worldToChunk(around.x, around.z);
   const distance = (c: ChunkCoords): number => (c.x - origin.x) ** 2 + (c.z - origin.z) ** 2;
   return [...chunks].sort((a, b) => distance(a) - distance(b));
+}
+
+/**
+ * The atlas frame of a block.
+ *
+ * @param blockName - Block name with its namespace, for example `minecraft:grass_block`.
+ * @returns The frame name, for example `grass_block.webp`. The namespace is not part of it yet.
+ */
+export function spriteName(blockName: string): string {
+  return `${blockName.slice(blockName.indexOf(':') + 1)}.webp`;
+}
+
+/**
+ * Turns the blocks of a chunk into tiles: the frame of each block and its position in the layer
+ * that holds every chunk. The tiles keep the order of the blocks, which is the draw order.
+ *
+ * @param chunk - The chunk the blocks belong to.
+ * @param blocks - Block positions inside the chunk and their palette indices.
+ * @returns One tile per block.
+ */
+export function projectBlocks(chunk: ChunkCoords, blocks: ChunkBlocks): Tile[] {
+  const sprites = blocks.palette.map(spriteName);
+  const originX = chunk.x * CHUNK_SIZE;
+  const originZ = chunk.z * CHUNK_SIZE;
+  const tiles: Tile[] = new Array<Tile>(blocks.x.length);
+  for (let i = 0; i < tiles.length; i++) {
+    const iso = worldToIso({ x: originX + (blocks.x[i] ?? 0), z: originZ + (blocks.z[i] ?? 0) });
+    tiles[i] = [
+      sprites[blocks.block[i] ?? 0] ?? '',
+      iso.x,
+      iso.y - (blocks.y[i] ?? 0) * LEVEL_HEIGHT,
+    ];
+  }
+  return tiles;
 }

@@ -15,6 +15,7 @@ import {
   chunkCenter,
   chunkKey,
   parseChunkKey,
+  projectBlocks,
   sortByDistance,
   visibleChunks,
   worldToChunk,
@@ -284,7 +285,7 @@ export class ViewerController {
    */
   private handleLoaded(coords: ChunkCoords, payload: ChunkPayload): void {
     const started = performance.now();
-    this.renderer.setChunk(coords, payload.tiles);
+    this.renderer.setChunk(coords, projectBlocks(coords, payload.blocks));
     this.cache.set(chunkKey(coords), { surfaceY: payload.surfaceY });
     const elapsed = performance.now() - started;
     this.buildTimes.push(elapsed);

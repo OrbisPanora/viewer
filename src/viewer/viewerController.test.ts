@@ -90,7 +90,16 @@ beforeEach(() => {
   fake.apps.length = 0;
   fake.renderers.length = 0;
   fetchChunk.mockReset();
-  fetchChunk.mockResolvedValue({ tiles: [['stone.webp', 0, 0]], surfaceY: 64 });
+  fetchChunk.mockResolvedValue({
+    blocks: {
+      palette: ['minecraft:stone'],
+      x: Uint8Array.of(0),
+      y: Int16Array.of(64),
+      z: Uint8Array.of(0),
+      block: Uint16Array.of(0),
+    },
+    surfaceY: 64,
+  });
 });
 
 afterEach(() => vi.restoreAllMocks());

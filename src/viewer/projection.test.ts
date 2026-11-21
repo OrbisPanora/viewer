@@ -4,8 +4,10 @@ import {
   chunkCenter,
   chunkKey,
   parseChunkKey,
+  projectBlocks,
   screenDeltaToWorld,
   sortByDistance,
+  spriteName,
   visibleChunks,
   worldToChunk,
   worldToIso,
@@ -91,5 +93,93 @@ describe('sortByDistance', () => {
     expect(sorted[0]).toEqual({ x: 0, z: 0 });
     expect(sorted[2]).toEqual({ x: 5, z: 5 });
     expect(input[0]).toEqual({ x: 5, z: 5 });
+  });
+});
+
+describe('spriteName', () => {
+  it('drops the namespace and adds the extension', () => {
+    expect(spriteName('minecraft:grass_block')).toBe('grass_block.webp');
+    expect(spriteName('create:andesite_casing')).toBe('andesite_casing.webp');
+  });
+
+  it('keeps a name that has no namespace', () => {
+    expect(spriteName('stone')).toBe('stone.webp');
+  });
+});
+
+describe('projectBlocks', () => {
+  /** Blocks of a chunk, built from lists of [x, y, z, palette index]. */
+  function blocks(palette: string[], rows: number[][]) {
+    return {
+      palette,
+      x: Uint8Array.from(rows.map((r) => r[0] ?? 0)),
+      y: Int16Array.from(rows.map((r) => r[1] ?? 0)),
+      z: Uint8Array.from(rows.map((r) => r[2] ?? 0)),
+      block: Uint16Array.from(rows.map((r) => r[3] ?? 0)),
+    };
+  }
+
+  it('places a block with the formulas the API used before 0.2.0', () => {
+    // Chunk (1, -2), block (3, 70, 4): gx = 19, gz = -28.
+    const tiles = projectBlocks({ x: 1, z: -2 }, blocks(['minecraft:stone'], [[3, 70, 4, 0]]));
+    expect(tiles).toEqual([['stone.webp', 16 * (19 - -28), 8 * (19 + -28) - 16 * 70]]);
+  });
+
+  it('gives the numbers recorded in the API reference for its fixture chunk (1, 0)', () => {
+    // The first three blocks of that chunk, as the API sent them before 0.2.0: [water.webp, 256, -864] and so on.
+    const tiles = projectBlocks(
+      { x: 1, z: 0 },
+      blocks(
+        ['minecraft:water'],
+        [
+          [0, 62, 0, 0],
+          [1, 62, 0, 0],
+          [2, 62, 0, 0],
+        ],
+      ),
+    );
+    expect(tiles).toEqual([
+      ['water.webp', 256, -864],
+      ['water.webp', 272, -856],
+      ['water.webp', 288, -848],
+    ]);
+  });
+
+  it('keeps the order of the blocks and uses the palette for the frame', () => {
+    const tiles = projectBlocks(
+      { x: 0, z: 0 },
+      blocks(
+        ['minecraft:dirt', 'minecraft:grass_block'],
+        [
+          [0, 63, 0, 1],
+          [1, 63, 0, 0],
+          [0, 64, 1, 1],
+        ],
+      ),
+    );
+    expect(tiles.map((tile) => tile[0])).toEqual([
+      'grass_block.webp',
+      'dirt.webp',
+      'grass_block.webp',
+    ]);
+  });
+
+  it('puts a block one level up 16 pixels higher on screen', () => {
+    const [low, high] = projectBlocks(
+      { x: 0, z: 0 },
+      blocks(
+        ['minecraft:stone'],
+        [
+          [2, 10, 3, 0],
+          [2, 11, 3, 0],
+        ],
+      ),
+    );
+    expect(low?.[1]).toBe(high?.[1]);
+    expect((low?.[2] ?? 0) - (high?.[2] ?? 0)).toBe(16);
+  });
+
+  it('gives no tiles for no blocks', () => {
+    expect(projectBlocks({ x: 0, z: 0 }, blocks([], []))).toEqual([]);
   });
 });

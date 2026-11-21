@@ -114,8 +114,8 @@ are visible, `chunkLoader` fetches the missing ones nearest first (at most six a
 cancelling requests for chunks that scrolled away), and `sceneRenderer` draws each as one
 tilemap. Chunks the world does not have are remembered and shown as grey diamonds.
 
-The API computes each block's screen position, so the client only places sprites. The
-sprite sheet is `public/iso_cube.png` and `public/iso_cube.json`. A block with no sprite is
+The API sends the position and the type of each block that can be seen, and
+`projectBlocks` (`viewer/projection.ts`) turns them into sprite positions. The sprite sheet is `public/iso_cube.png` and `public/iso_cube.json`. A block with no sprite is
 not drawn and is reported once in the console.
 
 ### Adding an API call
