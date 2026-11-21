@@ -14,7 +14,7 @@
  * Scenarios (see --help for the options):
  *   pan      Pan 50 chunks at zoom 1. Run it on a small and a large world and compare the two files.
  *   travel   Pan for several minutes along long straight lines and back. Shows memory growth.
- *   zoomout  Zoom out to the minimum, wait for the screen to fill, then pan 50 chunks.
+ *   zoomout  Zoom out to 0.25 (or `--zoom`), wait for the screen to fill, then pan 50 chunks.
  *
  * The script only reads from the viewer. It writes `benchmarks/results/web-<scenario>-<label>-<time>.json`
  * (ignored by git) with the numbers and labels (machine, commit, region count, viewport), and
@@ -43,6 +43,8 @@ type Scenario = 'pan' | 'travel' | 'zoomout';
 
 const BLOCKS_PER_CHUNK = 16;
 const SETTLE_TIMEOUT_MS = 180_000;
+/** Zoom of the `zoomout` scenario when `--zoom` is not given. */
+const DEFAULT_ZOOMOUT = 0.25;
 
 /**
  * Nearest-rank percentile.
@@ -314,6 +316,8 @@ interface Options {
   headless: boolean;
   speed: number;
   minutes: number;
+  /** Zoom of the run, or `undefined` for the default of the scenario (1 for pan and travel, 0.25 for zoomout). */
+  zoom: number | undefined;
   serverPid: number | undefined;
 }
 
@@ -339,11 +343,12 @@ async function runScenario(
     window.__longTasks = [];
   });
   const result: Json = {};
+  const zoom = options.zoom ?? (scenario === 'zoomout' ? DEFAULT_ZOOMOUT : 1);
+  result.zoom = zoom;
+  await page.evaluate((value) => window.__orbisBench?.setZoom(value), zoom);
   if (scenario === 'zoomout') {
-    await page.evaluate(() => window.__orbisBench?.setZoom(0.5));
     result.settle_after_zoom_out_ms = await settle(page);
   } else {
-    await page.evaluate(() => window.__orbisBench?.setZoom(1));
     result.settle_before_ms = await settle(page);
   }
 
@@ -457,6 +462,7 @@ async function main(): Promise<number> {
       headless: { type: 'boolean', default: false },
       speed: { type: 'string', default: '8' },
       minutes: { type: 'string', default: '5' },
+      zoom: { type: 'string' },
       'server-pid': { type: 'string' },
       world: { type: 'string' },
       start: { type: 'string' },
@@ -466,7 +472,7 @@ async function main(): Promise<number> {
   });
   if (values.help) {
     console.log(
-      'Options: --url --scenario pan|travel|zoomout|all --label NAME --headless --speed CHUNKS_PER_S --minutes N --server-pid PID --world DIR --start=X,Z --out DIR',
+      'Options: --url --scenario pan|travel|zoomout|all --label NAME --headless --speed CHUNKS_PER_S --minutes N --zoom Z --server-pid PID --world DIR --start=X,Z --out DIR',
     );
     return 0;
   }
@@ -477,6 +483,7 @@ async function main(): Promise<number> {
     headless: values.headless as boolean,
     speed: Number(values.speed),
     minutes: Number(values.minutes),
+    zoom: values.zoom ? Number(values.zoom) : undefined,
     serverPid: values['server-pid'] ? Number(values['server-pid']) : undefined,
   };
 
