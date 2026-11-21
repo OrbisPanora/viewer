@@ -10,8 +10,8 @@ import {
   type WorldPoint,
 } from './projection';
 
-/** Smallest zoom factor: the world appears half size. */
-export const MIN_ZOOM = 0.5;
+/** Smallest zoom factor: the world appears at a tenth of its size. */
+export const MIN_ZOOM = 0.1;
 /** Largest zoom factor. */
 export const MAX_ZOOM = 2.5;
 
