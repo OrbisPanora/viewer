@@ -259,6 +259,22 @@ describe('ViewerController', () => {
     viewer.destroy();
   });
 
+  it('is not settled between a camera change and the next frame', async () => {
+    const viewer = await ViewerController.create({
+      container: document.createElement('div'),
+      startAt: { x: 0, z: 0 },
+    });
+    for (let i = 0; i < 40 && !viewer.isSettled(); i++) {
+      frame();
+      await settle();
+    }
+    expect(viewer.isSettled()).toBe(true);
+    // The visible chunks are recomputed in the next frame, so before it the old list would look settled.
+    viewer.setCameraZoom(0.5);
+    expect(viewer.isSettled()).toBe(false);
+    viewer.destroy();
+  });
+
   it('records frames only while asked to', async () => {
     const viewer = await ViewerController.create({
       container: document.createElement('div'),

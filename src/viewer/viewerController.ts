@@ -387,6 +387,8 @@ export class ViewerController {
    * @returns `true` when nothing more will appear without the camera moving.
    */
   isSettled(): boolean {
+    // The camera moved since the last frame: the list of visible chunks is not up to date yet.
+    if (this.camera.version !== this.lastCameraVersion) return false;
     if (this.loader.pending > 0) return false;
     return this.visibleList.every((c) => {
       const key = chunkKey(c);
