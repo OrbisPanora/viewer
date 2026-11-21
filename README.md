@@ -144,8 +144,9 @@ node benchmarks/run.ts --scenario pan --label small --world /path/to/world --sta
 node benchmarks/compare.ts benchmarks/results/<before>.json benchmarks/results/<after>.json
 ```
 
-Scenarios: `pan` (50 chunks at zoom 1), `zoomout` (minimum zoom, then 50 chunks) and `travel`
-(`--minutes` of long straight runs, sampling memory every 10 s). Use `--headless` on a machine
+Scenarios: `pan` (50 chunks at zoom 1), `zoomout` (zoom 0.25, then 50 chunks) and `travel`
+(`--minutes` of long straight runs, sampling memory every 10 s). `--zoom Z` sets the zoom of any
+scenario, for example `--scenario zoomout --zoom 0.1`. Use `--headless` on a machine
 without a display; the results then include software rendering. `--start=X,Z` is the chunk to begin over (by default the viewer's own start). `--world` only counts the
 region files and their size for the labels in the result file.
 
