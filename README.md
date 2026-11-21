@@ -116,7 +116,7 @@ tilemap. Chunks the world does not have are remembered and shown as grey diamond
 
 The API computes each block's screen position, so the client only places sprites. The
 sprite sheet is `public/iso_cube.png` and `public/iso_cube.json`. A block with no sprite is
-drawn as glass and reported once in the console.
+not drawn and is reported once in the console.
 
 ### Adding an API call
 
