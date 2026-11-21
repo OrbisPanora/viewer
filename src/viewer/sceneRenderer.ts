@@ -99,7 +99,10 @@ export class SceneRenderer {
     this.removeChunk(key);
 
     const tilemap = new Tilemap([this.atlas.source]);
-    for (const [name, x, y] of tiles) tilemap.tile(this.atlas.texture(name), x, y);
+    for (const [name, x, y] of tiles) {
+      const texture = this.atlas.texture(name);
+      if (texture) tilemap.tile(texture, x, y);
+    }
     tilemap.zIndex = coords.x + coords.z;
     this.tilemaps.set(key, tilemap);
     this.tileCounts.set(key, tiles.length);
