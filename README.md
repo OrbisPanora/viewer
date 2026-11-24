@@ -41,16 +41,16 @@ and open `http://127.0.0.1:8080`. See [Deployment](#deployment) for the details.
 
 ## Scripts
 
-| Command                 | Purpose                                                                                                                                                   |
-| ----------------------- | --------------------------------------------------------------------------------------------------------------------------------------------------------- |
-| `npm run dev`           | Dev server with hot reload and the API proxy.                                                                                                             |
-| `npm run build`         | Type-check, then build to `dist/`.                                                                                                                        |
-| `npm run preview`       | Serve `dist/` (port 4173), with the same proxy and headers.                                                                                               |
-| `npm run typecheck`     | `vue-tsc` only.                                                                                                                                           |
-| `npm run lint`          | ESLint, including the rule that exports must have a doc comment.                                                                                          |
-| `npm run format`        | Prettier (`format:check` only reports).                                                                                                                   |
-| `npm test`              | Vitest unit and component tests.                                                                                                                          |
-| `npm run test:coverage` | The same with coverage. CI fails below 80 % (statements, branches, functions, lines). `sceneRenderer.ts` and `atlas.ts` draw with WebGL and are excluded. |
+| Command                 | Purpose                                                                                                                                                                                                                                        |
+| ----------------------- | ---------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------------- |
+| `npm run dev`           | Dev server with hot reload and the API proxy.                                                                                                                                                                                                  |
+| `npm run build`         | Type-check, then build to `dist/`.                                                                                                                                                                                                             |
+| `npm run preview`       | Serve `dist/` (port 4173), with the same proxy and headers.                                                                                                                                                                                    |
+| `npm run typecheck`     | `vue-tsc` only.                                                                                                                                                                                                                                |
+| `npm run lint`          | ESLint, including the rule that exports must have a doc comment.                                                                                                                                                                               |
+| `npm run format`        | Prettier (`format:check` only reports).                                                                                                                                                                                                        |
+| `npm test`              | Vitest unit and component tests.                                                                                                                                                                                                               |
+| `npm run test:coverage` | The same with coverage. CI fails below 80 % (statements, branches, functions, lines). `sceneRenderer.ts` and `atlas.ts` draw with WebGL, and `pack/render.ts`, `pack/store.ts` and `pack/prepare.ts` need browser APIs; all five are excluded. |
 
 ## Configuration
 
@@ -73,11 +73,12 @@ through one origin, no CORS setup is needed.
 All variables are listed in `.env.example`. Vite copies every `VITE_*` variable into the
 browser bundle, so never put a secret in one.
 
-| Variable              | Default                 | Meaning                                                               |
-| --------------------- | ----------------------- | --------------------------------------------------------------------- |
-| `VITE_DEV_API_TARGET` | `http://127.0.0.1:8000` | Where the dev and preview servers forward API requests.               |
-| `VITE_API_BASE_URL`   | empty                   | API origin as the browser sees it. Empty means the page's own origin. |
-| `VITE_MAX_UPLOAD_MB`  | `500`                   | Largest archive the upload form accepts. The API's own limit is 500.  |
+| Variable                 | Default                 | Meaning                                                                |
+| ------------------------ | ----------------------- | ---------------------------------------------------------------------- |
+| `VITE_DEV_API_TARGET`    | `http://127.0.0.1:8000` | Where the dev and preview servers forward API requests.                |
+| `VITE_API_BASE_URL`      | empty                   | API origin as the browser sees it. Empty means the page's own origin.  |
+| `VITE_MAX_UPLOAD_MB`     | `500`                   | Largest archive the upload form accepts. The API's own limit is 500.   |
+| `VITE_MINECRAFT_VERSION` | `26.3`                  | Minecraft version whose `client.jar` the block sprites are drawn from. |
 
 Invalid values stop the app at startup with a message naming the variable (`src/config.ts`).
 
@@ -100,7 +101,8 @@ src/
 │   ├── chunkCache.ts        least-recently-used cache
 │   ├── sceneRenderer.ts     pixi tilemaps and placeholders
 │   ├── inputController.ts   pointer, wheel and keyboard
-│   ├── atlas.ts             block sprite sheet
+│   ├── atlas.ts             pixi textures of the block sprite sheet
+│   ├── pack/                block sprites built from the vanilla client.jar (see below)
 │   ├── viewerController.ts  connects the pieces above
 │   ├── metrics.ts           rolling percentiles for the debug overlay
 │   └── benchHook.ts         dev-only hook used by benchmarks/run.ts
@@ -115,8 +117,26 @@ cancelling requests for chunks that scrolled away), and `sceneRenderer` draws ea
 tilemap. Chunks the world does not have are remembered and shown as grey diamonds.
 
 The API sends the position and the type of each block that can be seen, and
-`projectBlocks` (`viewer/projection.ts`) turns them into sprite positions. The sprite sheet is `public/iso_cube.png` and `public/iso_cube.json`. A block with no sprite is
-not drawn and is reported once in the console.
+`projectBlocks` (`viewer/projection.ts`) turns them into sprite positions. A block with no sprite is not drawn and is reported once in the console.
+
+### Block sprites
+
+There is no sprite file in the repository. Before it calls the API, the viewer gets the sprite sheet
+for the Minecraft version in `VITE_MINECRAFT_VERSION` (`viewer/pack/prepare.ts`):
+
+1. It looks for a stored sheet in the browser's Cache API. If there is one, it uses it and makes no
+   request to Mojang.
+2. Otherwise it reads Mojang's version manifest (`piston-meta.mojang.com`) to find the `client.jar` of
+   that version (`piston-data.mojang.com`). It reads the file list at the end of the jar and downloads
+   only the blockstates, block models and block textures, with range requests (about 5 MB of 41 MB).
+   Each file is checked against the CRC-32 in the zip (`zip.ts`).
+3. `models.ts` picks one state for each block name and keeps the faces that turn toward the camera.
+   `render.ts` draws each block into a 32 x 32 cell with the maths of `geometry.ts`, and the sheet is
+   stored in the browser.
+
+The Cache API exists only on pages served over https or from `localhost`; elsewhere the sheet is built at
+every start. When the drawing changes, raise `ATLAS_FORMAT` in `prepare.ts` so stored sheets are rebuilt.
+No file from Mojang is committed or put in the Docker image. Blocks of mods are not drawn yet (viewer#4).
 
 ### Adding an API call
 
