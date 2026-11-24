@@ -3,7 +3,11 @@ import { ConfigError, parseConfig } from './config';
 
 describe('parseConfig', () => {
   it('uses the same origin and a 500 MiB limit by default', () => {
-    expect(parseConfig({})).toEqual({ apiBaseUrl: '', maxUploadBytes: 500 * 1024 * 1024 });
+    expect(parseConfig({})).toEqual({
+      apiBaseUrl: '',
+      maxUploadBytes: 500 * 1024 * 1024,
+      minecraftVersion: '26.3',
+    });
   });
 
   it('normalises an origin and drops the trailing slash', () => {
@@ -25,5 +29,14 @@ describe('parseConfig', () => {
 
   it.each(['0', '-1', '1.5', 'abc', '99999'])('rejects the upload limit %s', (value) => {
     expect(() => parseConfig({ VITE_MAX_UPLOAD_MB: value })).toThrow(/VITE_MAX_UPLOAD_MB/);
+  });
+
+  it('reads the Minecraft version', () => {
+    expect(parseConfig({ VITE_MINECRAFT_VERSION: ' 1.21.4 ' }).minecraftVersion).toBe('1.21.4');
+    expect(parseConfig({ VITE_MINECRAFT_VERSION: '24w14a' }).minecraftVersion).toBe('24w14a');
+  });
+
+  it.each(['../x', '1.21 4', 'a/b', '-1'])('rejects the Minecraft version %s', (value) => {
+    expect(() => parseConfig({ VITE_MINECRAFT_VERSION: value })).toThrow(/VITE_MINECRAFT_VERSION/);
   });
 });

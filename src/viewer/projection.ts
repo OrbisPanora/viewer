@@ -164,10 +164,10 @@ export function sortByDistance(chunks: readonly ChunkCoords[], around: WorldPoin
  * The atlas frame of a block.
  *
  * @param blockName - Block name with its namespace, for example `minecraft:grass_block`.
- * @returns The frame name, for example `grass_block.webp`. The namespace is not part of it yet.
+ * @returns The frame name, which is the block name; a name without a namespace gets `minecraft:`.
  */
 export function spriteName(blockName: string): string {
-  return `${blockName.slice(blockName.indexOf(':') + 1)}.webp`;
+  return blockName.includes(':') ? blockName : `minecraft:${blockName}`;
 }
 
 /**

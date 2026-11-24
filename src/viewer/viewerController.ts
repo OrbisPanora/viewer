@@ -6,6 +6,7 @@ import 'pixi.js/unsafe-eval';
 import { Application } from 'pixi.js';
 import { fetchChunk, type ChunkPayload } from '@/api/chunks';
 import { loadAtlas, type Atlas } from './atlas';
+import type { RenderedAtlas } from './pack/render';
 import { Camera } from './camera';
 import { ChunkCache } from './chunkCache';
 import { ChunkLoader } from './chunkLoader';
@@ -95,6 +96,8 @@ export interface FrameLog {
 export interface ViewerOptions {
   /** Element that receives the canvas. The canvas fills it and follows its size. */
   container: HTMLElement;
+  /** The block sprites, built by `prepareAtlas` before the viewer starts. */
+  atlas: RenderedAtlas;
   /** Block position to start over. Without it the camera centres on the first chunk that loads. */
   startAt?: WorldPoint;
   /** Receives statistics a few times per second. */
@@ -150,7 +153,7 @@ export class ViewerController {
   /**
    * Starts the viewer inside a container.
    *
-   * @param options - Container, start position and statistics callback.
+   * @param options - Container, sprites, start position and statistics callback.
    * @returns The running viewer. Call {@link destroy} to stop it.
    * @throws {Error} If WebGL is unavailable or the atlas cannot be loaded.
    */
@@ -166,7 +169,7 @@ export class ViewerController {
     options.container.appendChild(app.canvas);
 
     try {
-      const atlas = await loadAtlas();
+      const atlas = await loadAtlas(options.atlas);
       const viewer = new ViewerController(app, options, new SceneRenderer(app, atlas));
       viewer.atlas = atlas;
       viewer.start();

@@ -14,6 +14,12 @@ vi.mock('@/viewer/viewerController', () => ({
   ViewerController: { create: viewer.create },
 }));
 
+const prepare = vi.hoisted(() => ({ prepareAtlas: vi.fn() }));
+vi.mock('@/viewer/pack/prepare', () => prepare);
+
+/** Stands in for the built atlas. */
+const ATLAS = { image: new Blob([]), frames: {} };
+
 import AboutView from './AboutView.vue';
 import ApiDocsView from './ApiDocsView.vue';
 import HomeView from './HomeView.vue';
@@ -40,6 +46,8 @@ beforeEach(() => {
   viewer.create.mockReset();
   viewer.destroy.mockReset();
   viewer.create.mockResolvedValue({ destroy: viewer.destroy });
+  prepare.prepareAtlas.mockReset();
+  prepare.prepareAtlas.mockResolvedValue(ATLAS);
 });
 
 afterEach(() => {
@@ -116,6 +124,60 @@ describe('ViewerView', () => {
     await flushPromises();
     expect(viewer.create).toHaveBeenCalledTimes(1);
     expect(viewer.create.mock.calls[0]?.[0].startAt).toEqual({ x: 768, z: -256 });
+  });
+
+  it('prepares the block sprites before it calls the API and gives them to the viewer', async () => {
+    const calls: string[] = [];
+    prepare.prepareAtlas.mockImplementation(async () => {
+      calls.push('atlas');
+      return ATLAS;
+    });
+    stubFetch((request) => {
+      calls.push('api');
+      return request.url.includes('health')
+        ? jsonResponse({ world_loaded: true })
+        : jsonResponse(envelope({ region_list: [] }));
+    });
+    await mountView(ViewerView);
+    await flushPromises();
+    expect(calls[0]).toBe('atlas');
+    expect(prepare.prepareAtlas.mock.calls[0]?.[0]).toBe('26.3');
+    expect(viewer.create.mock.calls[0]?.[0].atlas).toBe(ATLAS);
+  });
+
+  it('shows the progress of the download while the sprites are prepared', async () => {
+    let report: (label: string, done: number, total: number) => void = () => undefined;
+    let finish: (value: typeof ATLAS) => void = () => undefined;
+    prepare.prepareAtlas.mockImplementation(
+      (_version: string, progress: typeof report) =>
+        new Promise((done) => {
+          report = progress;
+          finish = done;
+        }),
+    );
+    stubFetch(() => jsonResponse({ world_loaded: false }));
+    const { wrapper } = await mountView(ViewerView);
+    await flushPromises();
+    expect(wrapper.find('[role="status"]').exists()).toBe(true);
+    report('Downloading block textures', 50, 200);
+    await flushPromises();
+    expect(wrapper.find('[role="status"]').text()).toContain('Downloading block textures');
+    expect(wrapper.find('progress').attributes('value')).toBe('25');
+    finish(ATLAS);
+    await flushPromises();
+    expect(wrapper.find('[role="status"]').exists()).toBe(false);
+  });
+
+  it('reports sprites that cannot be downloaded and does not call the API', async () => {
+    vi.spyOn(console, 'error').mockImplementation(() => undefined);
+    prepare.prepareAtlas.mockRejectedValue(new Error('offline'));
+    const requests = stubFetch(() => jsonResponse({ world_loaded: true }));
+    const { wrapper } = await mountView(ViewerView);
+    await flushPromises();
+    expect(wrapper.find('dialog').text()).toContain('Cannot load the block textures');
+    expect(wrapper.find('dialog').text()).toContain('Minecraft 26.3');
+    expect(requests).toHaveLength(0);
+    expect(viewer.create).not.toHaveBeenCalled();
   });
 
   it('starts without a start position when the region list is empty or fails', async () => {

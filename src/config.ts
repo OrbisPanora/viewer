@@ -12,6 +12,8 @@ export interface AppConfig {
   readonly apiBaseUrl: string;
   /** Largest world archive the upload form accepts, in bytes. */
   readonly maxUploadBytes: number;
+  /** Minecraft version whose `client.jar` the block sprites are drawn from, for example `26.3`. */
+  readonly minecraftVersion: string;
 }
 
 /** Raised when an environment variable holds an unusable value. */
@@ -29,6 +31,7 @@ export class ConfigError extends Error {
 }
 
 const DEFAULT_MAX_UPLOAD_MB = 500;
+const DEFAULT_MINECRAFT_VERSION = '26.3';
 /** Upper bound that guards against typos such as an extra zero; not an API limit. */
 const MAX_UPLOAD_MB_CEILING = 10_240;
 
@@ -78,6 +81,22 @@ function parseMaxUploadBytes(raw: string | undefined): number {
 }
 
 /**
+ * Validates the Minecraft version.
+ *
+ * @param raw - The raw variable value.
+ * @returns The version id, or the default.
+ * @throws {ConfigError} If the value has characters a version id does not have.
+ */
+function parseMinecraftVersion(raw: string | undefined): string {
+  const value = (raw ?? '').trim();
+  if (value === '') return DEFAULT_MINECRAFT_VERSION;
+  if (!/^[0-9A-Za-z][0-9A-Za-z._-]*$/.test(value)) {
+    throw new ConfigError('VITE_MINECRAFT_VERSION', `"${value}" is not a Minecraft version id`);
+  }
+  return value;
+}
+
+/**
  * Builds the configuration from an environment object.
  *
  * @param env - Usually `import.meta.env`; a plain object in tests.
@@ -88,6 +107,7 @@ export function parseConfig(env: Record<string, string | undefined>): AppConfig 
   return {
     apiBaseUrl: parseApiBaseUrl(env.VITE_API_BASE_URL),
     maxUploadBytes: parseMaxUploadBytes(env.VITE_MAX_UPLOAD_MB),
+    minecraftVersion: parseMinecraftVersion(env.VITE_MINECRAFT_VERSION),
   };
 }
 

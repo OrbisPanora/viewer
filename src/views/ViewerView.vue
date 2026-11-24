@@ -1,6 +1,7 @@
 <!--
-  The map. Checks that the API has a world, then starts the pixi viewer inside a container
-  that fills the page, and stops it when the page is left.
+  The map. Gets the block sprites (downloaded from Mojang and drawn on the first visit, then read
+  from the browser's storage), checks that the API has a world, then starts the pixi viewer inside a
+  container that fills the page, and stops it when the page is left.
 -->
 <script setup lang="ts">
 import { onBeforeUnmount, onMounted, ref } from 'vue';
@@ -8,7 +9,11 @@ import { useRouter } from 'vue-router';
 import { fetchWorldRegions } from '@/api/worlds';
 import DebugOverlay from '@/components/DebugOverlay.vue';
 import ErrorDialog from '@/components/ErrorDialog.vue';
+import LoadingProgress from '@/components/LoadingProgress.vue';
+import { config } from '@/config';
 import { useWorldStore } from '@/stores/world';
+import { prepareAtlas } from '@/viewer/pack/prepare';
+import type { RenderedAtlas } from '@/viewer/pack/render';
 import type { ViewerController, ViewerStats } from '@/viewer/viewerController';
 
 /** Side of a region in blocks (32 chunks of 16 blocks). */
@@ -21,6 +26,8 @@ const container = ref<HTMLElement | null>(null);
 const stats = ref<ViewerStats | null>(null);
 const showDebug = ref(false);
 const problem = ref<{ title: string; message: string } | null>(null);
+/** The step the user is waiting for while the sprites are prepared, or `null`. */
+const loading = ref<{ label: string; done: number; total: number } | null>(null);
 
 let viewer: ViewerController | null = null;
 /** Set when the page is left before the viewer finished starting. */
@@ -47,7 +54,35 @@ async function findStart(): Promise<{ x: number; z: number } | undefined> {
   return undefined;
 }
 
+/**
+ * Gets the block sprites, showing the progress. On failure the error dialog is shown.
+ *
+ * @returns The sprites, or `undefined` if they could not be prepared.
+ */
+async function getAtlas(): Promise<RenderedAtlas | undefined> {
+  loading.value = { label: 'Preparing the block textures', done: 0, total: 0 };
+  try {
+    return await prepareAtlas(config.minecraftVersion, (label, done, total) => {
+      loading.value = { label, done, total };
+    });
+  } catch (error) {
+    console.error('Block textures failed to load', error);
+    problem.value = {
+      title: 'Cannot load the block textures',
+      message:
+        `The block textures of Minecraft ${config.minecraftVersion} could not be downloaded from Mojang. ` +
+        'Check the network connection and reload the page.',
+    };
+    return undefined;
+  } finally {
+    loading.value = null;
+  }
+}
+
 onMounted(async () => {
+  const atlas = await getAtlas();
+  if (unmounted || !atlas) return;
+
   const status = await world.check();
   if (unmounted) return;
   if (status === 'empty') {
@@ -65,6 +100,7 @@ onMounted(async () => {
     // Imported here so the pixi.js chunk is only downloaded when a world is shown.
     const { ViewerController } = await import('@/viewer/viewerController');
     const created = await ViewerController.create({
+      atlas,
       container: container.value,
       ...(startAt ? { startAt } : {}),
       onStats: (s) => {
@@ -105,6 +141,9 @@ function goHome(): void {
 <template>
   <div class="viewer">
     <div ref="container" class="viewer__canvas"></div>
+    <div v-if="loading" class="viewer__loading">
+      <LoadingProgress :label="loading.label" :done="loading.done" :total="loading.total" />
+    </div>
     <div class="viewer__tools">
       <label class="viewer__toggle"> <input v-model="showDebug" type="checkbox" /> Debug </label>
       <DebugOverlay v-if="showDebug" :stats="stats" />
@@ -133,6 +172,19 @@ function goHome(): void {
   /* Dragging the map must not select the page's text. */
   user-select: none;
   touch-action: none;
+}
+
+.viewer__loading {
+  position: absolute;
+  inset: 0;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  padding: 1rem;
+}
+
+.viewer__loading > * {
+  width: min(28rem, 100%);
 }
 
 .viewer__tools {

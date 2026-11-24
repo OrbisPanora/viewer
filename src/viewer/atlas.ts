@@ -1,8 +1,16 @@
 /**
- * The block texture atlas: one image holding every block sprite, and a JSON file naming
- * the frame of each. It is served from `public/` (`iso_cube.png`, `iso_cube.json`).
+ * The block texture atlas: one image holding every block sprite, and the position of each. It is built
+ * in the browser from the vanilla `client.jar` by `pack/prepare.ts`; this file turns it into pixi textures.
  */
-import { Assets, type Spritesheet, type Texture, type TextureSource } from 'pixi.js';
+import {
+  ImageSource,
+  Spritesheet,
+  Texture,
+  type SpritesheetData,
+  type TextureSource,
+} from 'pixi.js';
+import { CELL } from './pack/geometry';
+import type { RenderedAtlas } from './pack/render';
 
 /** Loaded atlas. */
 export interface Atlas {
@@ -11,7 +19,7 @@ export interface Atlas {
   /**
    * Looks up the sprite of a block.
    *
-   * @param name - Frame name such as `grass_block.webp`.
+   * @param name - Block name with its namespace, such as `minecraft:grass_block`.
    * @returns The sprite, or `undefined` when the atlas has none. A block without a sprite is not drawn.
    *   The name is reported once with a console warning. Never throws on a bad name.
    */
@@ -28,17 +36,29 @@ export interface Atlas {
 const reportedUnknown = new Set<string>();
 
 /**
- * Loads the atlas.
+ * Makes the pixi textures of an atlas.
  *
- * @param url - Location of the JSON description; the image is found through it.
+ * @param rendered - The atlas image and the position of each sprite.
  * @returns The atlas.
- * @throws {Error} If the files cannot be loaded.
+ * @throws {Error} If the image cannot be decoded.
  */
-export async function loadAtlas(url = `${import.meta.env.BASE_URL}iso_cube.json`): Promise<Atlas> {
-  const sheet = await Assets.load<Spritesheet>(url);
-
+export async function loadAtlas(rendered: RenderedAtlas): Promise<Atlas> {
+  const bitmap = await createImageBitmap(rendered.image);
   // Pixel art must not be smoothed when scaled.
-  sheet.textureSource.style.scaleMode = 'nearest';
+  const source = new ImageSource({ resource: bitmap, scaleMode: 'nearest' });
+  const frames: SpritesheetData['frames'] = {};
+  for (const [name, { x, y }] of Object.entries(rendered.frames)) {
+    frames[name] = {
+      frame: { x, y, w: CELL, h: CELL },
+      sourceSize: { w: CELL, h: CELL },
+      spriteSourceSize: { x: 0, y: 0, w: CELL, h: CELL },
+    };
+  }
+  const sheet = new Spritesheet(new Texture({ source }), {
+    frames,
+    meta: { scale: '1', size: { w: bitmap.width, h: bitmap.height } },
+  });
+  await sheet.parse();
 
   return {
     source: sheet.textureSource,

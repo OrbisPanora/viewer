@@ -97,13 +97,14 @@ describe('sortByDistance', () => {
 });
 
 describe('spriteName', () => {
-  it('drops the namespace and adds the extension', () => {
-    expect(spriteName('minecraft:grass_block')).toBe('grass_block.webp');
-    expect(spriteName('create:andesite_casing')).toBe('andesite_casing.webp');
+  it('keeps the namespace, so blocks of different mods stay different', () => {
+    expect(spriteName('minecraft:grass_block')).toBe('minecraft:grass_block');
+    expect(spriteName('create:andesite_casing')).toBe('create:andesite_casing');
+    expect(spriteName('minecraft:andesite')).not.toBe(spriteName('othermod:andesite'));
   });
 
-  it('keeps a name that has no namespace', () => {
-    expect(spriteName('stone')).toBe('stone.webp');
+  it('adds minecraft: to a name that has no namespace', () => {
+    expect(spriteName('stone')).toBe('minecraft:stone');
   });
 });
 
@@ -122,11 +123,11 @@ describe('projectBlocks', () => {
   it('places a block with the formulas the API used before 0.2.0', () => {
     // Chunk (1, -2), block (3, 70, 4): gx = 19, gz = -28.
     const tiles = projectBlocks({ x: 1, z: -2 }, blocks(['minecraft:stone'], [[3, 70, 4, 0]]));
-    expect(tiles).toEqual([['stone.webp', 16 * (19 - -28), 8 * (19 + -28) - 16 * 70]]);
+    expect(tiles).toEqual([['minecraft:stone', 16 * (19 - -28), 8 * (19 + -28) - 16 * 70]]);
   });
 
   it('gives the numbers recorded in the API reference for its fixture chunk (1, 0)', () => {
-    // The first three blocks of that chunk, as the API sent them before 0.2.0: [water.webp, 256, -864] and so on.
+    // The first three blocks of that chunk, as the API sent them before 0.2.0: [minecraft:water, 256, -864] and so on (the frame name had .webp then).
     const tiles = projectBlocks(
       { x: 1, z: 0 },
       blocks(
@@ -139,9 +140,9 @@ describe('projectBlocks', () => {
       ),
     );
     expect(tiles).toEqual([
-      ['water.webp', 256, -864],
-      ['water.webp', 272, -856],
-      ['water.webp', 288, -848],
+      ['minecraft:water', 256, -864],
+      ['minecraft:water', 272, -856],
+      ['minecraft:water', 288, -848],
     ]);
   });
 
@@ -158,9 +159,9 @@ describe('projectBlocks', () => {
       ),
     );
     expect(tiles.map((tile) => tile[0])).toEqual([
-      'grass_block.webp',
-      'dirt.webp',
-      'grass_block.webp',
+      'minecraft:grass_block',
+      'minecraft:dirt',
+      'minecraft:grass_block',
     ]);
   });
 

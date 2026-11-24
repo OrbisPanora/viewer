@@ -6,6 +6,7 @@ import { createAppRouter } from '@/router';
 import AppNav from './AppNav.vue';
 import DebugOverlay from './DebugOverlay.vue';
 import ErrorDialog from './ErrorDialog.vue';
+import LoadingProgress from './LoadingProgress.vue';
 import UploadProgress from './UploadProgress.vue';
 
 describe('ErrorDialog', () => {
@@ -135,5 +136,25 @@ describe('AppNav', () => {
       '/api-docs',
       '/about',
     ]);
+  });
+});
+
+describe('LoadingProgress', () => {
+  it('shows the label and the percentage', () => {
+    const wrapper = mount(LoadingProgress, {
+      props: { label: 'Downloading', done: 25, total: 100 },
+    });
+    expect(wrapper.text()).toContain('Downloading');
+    expect(wrapper.find('progress').attributes('value')).toBe('25');
+  });
+
+  it('shows an indeterminate bar when the total is unknown', () => {
+    const wrapper = mount(LoadingProgress, { props: { label: 'Waiting', done: 0, total: 0 } });
+    expect(wrapper.find('progress').attributes('value')).toBeUndefined();
+  });
+
+  it('never goes past 100 %', () => {
+    const wrapper = mount(LoadingProgress, { props: { label: 'x', done: 9, total: 3 } });
+    expect(wrapper.find('progress').attributes('value')).toBe('100');
   });
 });

@@ -11,6 +11,9 @@ import { loadEnv, type Plugin } from 'vite';
 import vue from '@vitejs/plugin-vue';
 import { defineConfig } from 'vitest/config';
 
+/** Hosts the viewer downloads the vanilla block data from (`src/viewer/pack/mojang.ts`). Keep `security-headers.conf` in step. */
+const MOJANG_HOSTS = 'https://piston-meta.mojang.com https://piston-data.mojang.com';
+
 /** Paths that belong to the API. Responses for these keep the API's own headers. */
 const API_PATHS = ['/api', '/docs', '/redoc', '/openapi.json'];
 
@@ -21,7 +24,8 @@ const API_PATHS = ['/api', '/docs', '/redoc', '/openapi.json'];
  * elements in development. Scripts are never inline. `worker-src blob:` and `img-src blob:`
  * are used by pixi.js to decode images off the main thread. There is no `unsafe-eval`:
  * the viewer imports `pixi.js/unsafe-eval`, which replaces the code generation pixi would
- * otherwise do with `new Function`.
+ * otherwise do with `new Function`. `connect-src` also allows the two Mojang hosts, because the
+ * browser downloads the block textures from them.
  *
  * @param dev - Whether the policy is for the dev server, which also needs its HMR WebSocket.
  * @returns The header value.
@@ -32,7 +36,7 @@ function contentSecurityPolicy(dev: boolean): string {
     "script-src 'self'",
     "style-src 'self' 'unsafe-inline'",
     "img-src 'self' data: blob:",
-    `connect-src 'self'${dev ? ' ws:' : ''}`,
+    `connect-src 'self' ${MOJANG_HOSTS}${dev ? ' ws:' : ''}`,
     "worker-src 'self' blob:",
     "object-src 'none'",
     "base-uri 'self'",
@@ -119,6 +123,12 @@ export default defineConfig(({ mode, command }) => {
           // have. They are checked by running the viewer.
           'src/viewer/sceneRenderer.ts',
           'src/viewer/atlas.ts',
+          // These three use browser APIs the test environment does not have (OffscreenCanvas,
+          // createImageBitmap, the Cache API). The calculations they rely on are in geometry.ts and
+          // models.ts, which are tested. They are checked by running the viewer.
+          'src/viewer/pack/render.ts',
+          'src/viewer/pack/store.ts',
+          'src/viewer/pack/prepare.ts',
         ],
         reporter: ['text', 'lcov'],
         thresholds: { statements: 80, branches: 80, functions: 80, lines: 80 },

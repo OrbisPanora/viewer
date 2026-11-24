@@ -66,6 +66,9 @@ vi.mock('@/api/chunks', () => ({ fetchChunk }));
 
 import { ViewerController, type ViewerStats } from './viewerController';
 
+/** Stands in for the built atlas; the real one is only read by the mocked `loadAtlas`. */
+const ATLAS = { image: new Blob([]), frames: {} };
+
 /**
  * Lets the loader's promises settle.
  */
@@ -107,7 +110,7 @@ afterEach(() => vi.restoreAllMocks());
 describe('ViewerController', () => {
   it('puts a focusable, labelled canvas in the container', async () => {
     const container = document.createElement('div');
-    const viewer = await ViewerController.create({ container });
+    const viewer = await ViewerController.create({ atlas: ATLAS, container });
     const canvas = container.querySelector('canvas');
     expect(canvas).not.toBeNull();
     expect(canvas?.tabIndex).toBe(0);
@@ -116,7 +119,10 @@ describe('ViewerController', () => {
   });
 
   it('requests the visible chunks and draws the ones that arrive', async () => {
-    const viewer = await ViewerController.create({ container: document.createElement('div') });
+    const viewer = await ViewerController.create({
+      atlas: ATLAS,
+      container: document.createElement('div'),
+    });
     frame();
     await settle();
     expect(fetchChunk).toHaveBeenCalled();
@@ -132,6 +138,7 @@ describe('ViewerController', () => {
   it('centres on the first chunk that loads when no start is given', async () => {
     const stats: ViewerStats[] = [];
     const viewer = await ViewerController.create({
+      atlas: ATLAS,
       container: document.createElement('div'),
       onStats: (value) => stats.push(value),
     });
@@ -150,6 +157,7 @@ describe('ViewerController', () => {
   it('starts over the given position', async () => {
     const stats: ViewerStats[] = [];
     const viewer = await ViewerController.create({
+      atlas: ATLAS,
       container: document.createElement('div'),
       startAt: { x: 256, z: 256 },
       onStats: (value) => stats.push(value),
@@ -164,6 +172,7 @@ describe('ViewerController', () => {
   it('reports statistics at most every 250 ms', async () => {
     const onStats = vi.fn();
     const viewer = await ViewerController.create({
+      atlas: ATLAS,
       container: document.createElement('div'),
       startAt: { x: 0, z: 0 },
       onStats,
@@ -182,6 +191,7 @@ describe('ViewerController', () => {
   it('follows the size of the renderer', async () => {
     const stats: ViewerStats[] = [];
     const viewer = await ViewerController.create({
+      atlas: ATLAS,
       container: document.createElement('div'),
       startAt: { x: 0, z: 0 },
       onStats: (value) => stats.push(value),
@@ -200,6 +210,7 @@ describe('ViewerController', () => {
     const stats: ViewerStats[] = [];
     const container = document.createElement('div');
     const viewer = await ViewerController.create({
+      atlas: ATLAS,
       container,
       startAt: { x: 0, z: 0 },
       onStats: (value) => stats.push(value),
@@ -222,6 +233,7 @@ describe('ViewerController', () => {
   it('reports frame, request and renderer numbers', async () => {
     const stats: ViewerStats[] = [];
     const viewer = await ViewerController.create({
+      atlas: ATLAS,
       container: document.createElement('div'),
       startAt: { x: 0, z: 0 },
       onStats: (value) => stats.push(value),
@@ -246,6 +258,7 @@ describe('ViewerController', () => {
 
   it('can be moved and zoomed from outside, and tells when it has settled', async () => {
     const viewer = await ViewerController.create({
+      atlas: ATLAS,
       container: document.createElement('div'),
       startAt: { x: 0, z: 0 },
     });
@@ -270,6 +283,7 @@ describe('ViewerController', () => {
 
   it('is not settled between a camera change and the next frame', async () => {
     const viewer = await ViewerController.create({
+      atlas: ATLAS,
       container: document.createElement('div'),
       startAt: { x: 0, z: 0 },
     });
@@ -286,6 +300,7 @@ describe('ViewerController', () => {
 
   it('records frames only while asked to', async () => {
     const viewer = await ViewerController.create({
+      atlas: ATLAS,
       container: document.createElement('div'),
       startAt: { x: 0, z: 0 },
     });
@@ -313,7 +328,7 @@ describe('ViewerController', () => {
 
   it('stops the loader, the renderer and the application when destroyed', async () => {
     const container = document.createElement('div');
-    const viewer = await ViewerController.create({ container });
+    const viewer = await ViewerController.create({ atlas: ATLAS, container });
     viewer.destroy();
     expect(fake.renderers[0]?.destroy).toHaveBeenCalled();
     expect(fake.apps[0]?.destroy).toHaveBeenCalledWith(true, { children: true });
@@ -322,7 +337,7 @@ describe('ViewerController', () => {
   it('frees the application and rethrows when the atlas cannot be loaded', async () => {
     fake.atlasFails = true;
     await expect(
-      ViewerController.create({ container: document.createElement('div') }),
+      ViewerController.create({ atlas: ATLAS, container: document.createElement('div') }),
     ).rejects.toThrow('atlas missing');
     expect(fake.apps[0]?.destroy).toHaveBeenCalled();
   });
@@ -330,7 +345,7 @@ describe('ViewerController', () => {
   it('rethrows when the application cannot start', async () => {
     fake.initFails = true;
     await expect(
-      ViewerController.create({ container: document.createElement('div') }),
+      ViewerController.create({ atlas: ATLAS, container: document.createElement('div') }),
     ).rejects.toThrow('no WebGL');
   });
 });
